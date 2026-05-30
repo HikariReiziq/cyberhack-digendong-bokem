@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-import { ZONES, CATEGORIES } from '@/lib/mockData';
+import { getDynamicZones, CATEGORIES } from '@/lib/mockData';
 import {
   Download,
   Search,
@@ -14,6 +14,9 @@ const PAGE_SIZE = 10;
 
 export default function FifoExpiryPage() {
   const [items, setItems] = useState([]);
+  const [dynamicZones, setDynamicZones] = useState([]);
+  useEffect(() => { setDynamicZones(getDynamicZones()); }, []);
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -157,7 +160,7 @@ export default function FifoExpiryPage() {
               aria-label="Filter by zone"
             >
               <option value="">All Zones</option>
-              {ZONES.map(z => <option key={z.id} value={z.id}>Zone {z.id}</option>)}
+              {dynamicZones.map(z => <option key={z.id} value={z.id}>Zone {z.id}</option>)}
             </select>
 
             {/* Category Filter */}

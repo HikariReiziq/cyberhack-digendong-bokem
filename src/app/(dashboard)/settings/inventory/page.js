@@ -1,7 +1,7 @@
 'use client';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
-import { ZONES, CATEGORIES } from '@/lib/mockData';
+import { getDynamicZones, CATEGORIES } from '@/lib/mockData';
 import { 
   Database, 
   Plus, 
@@ -28,6 +28,7 @@ import {
   FlaskConical
 } from 'lucide-react';
 import './inventory.css';
+import UpdateStockModal from '@/components/UpdateStockModal';
 
 const PAGE_SIZE = 10;
 const UNITS = ['kg', 'liter', 'pcs', 'box', 'karung', 'drum'];
@@ -64,6 +65,7 @@ export default function InventoryPage() {
   // Modal Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('add'); // 'add' | 'edit'
+  const [isUpdateStockModalOpen, setIsUpdateStockModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     id: '',
     name: '',
@@ -150,6 +152,13 @@ export default function InventoryPage() {
   }, [isModalOpen, modalMode, formData.id]);
 
   // Toast Auto-Dismiss
+  const [dynamicZones, setDynamicZones] = useState([]);
+  
+  useEffect(() => {
+    fetchInventory();
+    setDynamicZones(getDynamicZones());
+  }, []);
+  
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => {
@@ -236,7 +245,9 @@ export default function InventoryPage() {
       unit: 'kg',
       location: '',
       dateIn: new Date().toISOString().split('T')[0],
-      expiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      expiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      maxCapacity: '',
+      threshold: 'Normal'
     });
     setIsModalOpen(true);
   };
@@ -254,7 +265,9 @@ export default function InventoryPage() {
       unit: item.unit,
       location: item.location,
       dateIn: item.dateIn,
-      expiry: item.expiry
+      expiry: item.expiry,
+      maxCapacity: item.maxCapacity || '',
+      threshold: item.threshold || 'Normal'
     });
     setIsModalOpen(true);
   };
@@ -548,9 +561,14 @@ export default function InventoryPage() {
           <p className="page-subtitle">Master database inventory of raw materials for AromaSys (Live PostgreSQL)</p>
         </div>
         {canEdit() && (
-          <button className="btn btn-primary inv-add-btn" onClick={handleOpenAdd} aria-label="Add new inventory record">
-            <Plus size={16} /> Add New Record
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-secondary inv-add-btn" onClick={() => setIsUpdateStockModalOpen(true)} aria-label="Update Stock">
+              <RefreshCw size={16} /> Update Stock
+            </button>
+            <button className="btn btn-primary inv-add-btn" onClick={handleOpenAdd} aria-label="Add new inventory record">
+              <Plus size={16} /> Add New Record
+            </button>
+          </div>
         )}
       </div>
 
@@ -586,7 +604,7 @@ export default function InventoryPage() {
             aria-label="Filter by zone"
           >
             <option value="">All Zones</option>
-            {ZONES.map(z => <option key={z.id} value={z.id}>Zone {z.id}</option>)}
+            {dynamicZones.map(z => <option key={z.id} value={z.id}>Zone {z.id}</option>)}
           </select>
           
           <select 
@@ -853,6 +871,35 @@ export default function InventoryPage() {
                 </div>
               </div>
 
+              <div className="form-grid">
+                <div className="form-group">
+                  <label className="field-label" htmlFor="inv-form-maxcap">Max Capacity</label>
+                  <input
+                    id="inv-form-maxcap"
+                    type="number"
+                    min="1"
+                    className="input"
+                    placeholder="e.g. 500"
+                    value={formData.maxCapacity}
+                    onChange={e => handleInputChange('maxCapacity', e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="field-label" htmlFor="inv-form-threshold">Stock Status Threshold</label>
+                  <select
+                    id="inv-form-threshold"
+                    className="select"
+                    value={formData.threshold}
+                    onChange={e => handleInputChange('threshold', e.target.value)}
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Optimal">Optimal</option>
+                    <option value="High">High</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="form-group">
                 <label className="field-label" htmlFor="inv-form-location">Location Slot <span className="required">*</span></label>
                 <select
@@ -1068,6 +1115,19 @@ export default function InventoryPage() {
             <X size={14} />
           </button>
         </div>
+      )}
+
+      {isUpdateStockModalOpen && (
+        <UpdateStockModal 
+          isOpen={isUpdateStockModalOpen}
+          onClose={() => setIsUpdateStockModalOpen(false)}
+          items={items}
+          onSave={(item, data) => {
+            setIsUpdateStockModalOpen(false);
+            const lotId = `${item.id.split('-')[0]}-${item.id.split('-')[1]}-${Math.floor(Math.random()*1000)}`;
+            setToast({ type: 'success', message: `Stock for ${item.name} updated! New Lot ID: ${lotId}`});
+          }}
+        />
       )}
     </div>
   );

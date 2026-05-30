@@ -6,13 +6,11 @@ import {
   Calendar, Package, Thermometer, FileText,
   Lightbulb, Clock
 } from 'lucide-react';
-import { ZONES, CATEGORIES } from '@/lib/mockData';
+import { getDynamicZones, CATEGORIES } from '@/lib/mockData';
 import './ChatbotOverlay.css';
 
-let msgIdCounter = 500;
 const getNextMsgId = () => {
-  msgIdCounter += 1;
-  return msgIdCounter;
+  return Date.now() + Math.random();
 };
 
 /**
@@ -297,54 +295,54 @@ export default function ChatbotOverlay({ isOpen, onClose, messages, setMessages 
     try {
       // 1. Fetch live database context
       const dbContext = await fetchDatabaseContext();
-      const contextText = dbContext
-        ? `
-- Raw Material Categories: ${JSON.stringify(CATEGORIES)}
-- Warehouse Zones: ${JSON.stringify(ZONES)}
-- Inventory Data (Active Lots): ${JSON.stringify(dbContext.inventory)}
-- Warehouse Slots: ${JSON.stringify(dbContext.slots.map(s => ({ id: s.id, zone: s.zone, occupied: s.occupied, itemId: s.itemId, itemName: s.item?.name })))}
-- Cold-Chain Temperature Log (last 24 hours): ${JSON.stringify(dbContext.temperatures)}
-`
-        : 'Failed to retrieve database content.';
 
-      // 2. Construct the Gemini System Prompt (improved, smarter, friendlier)
-      const fullPrompt = `
-You are AromaSys AI Copilot — a smart, friendly, and highly capable warehouse assistant for the AromaSys botanical manufacturing facility.
+      // Optimize context: only send relevant fields to reduce token count
+      let contextText = 'Failed to retrieve database content.';
+      if (dbContext) {
+        const compactInventory = dbContext.inventory.map(i => ({
+          name: i.name, qty: i.qty, unit: i.unit, category: i.category,
+          location: i.location, expiry: i.expiry, minStock: i.minStock
+        }));
+        const compactSlots = dbContext.slots.map(s => ({
+          id: s.id, zone: s.zone, occupied: s.occupied, itemName: s.item?.name
+        }));
+        contextText = `
+- Categories: ${JSON.stringify(CATEGORIES)}
+- Zones: ${JSON.stringify(getDynamicZones().map(z => ({ id: z.id, name: z.name, type: z.type, tempMin: z.tempMin, tempMax: z.tempMax })))}
+- Inventory: ${JSON.stringify(compactInventory)}
+- Slots: ${JSON.stringify(compactSlots)}
+- Cold-Chain Temps: ${JSON.stringify(dbContext.temperatures)}
+`;
+      }
 
-Here is the LIVE warehouse database (JSON format):
+      // 2. Construct the Gemini System Instruction (separate from user message)
+      const systemPrompt = `You are Aro, the AromaSys AI Copilot — a smart warehouse assistant for a botanical manufacturing facility.
+
+LIVE DATABASE (JSON):
 ${contextText}
 
-Today's date: ${new Date().toISOString().split('T')[0]}.
+Today: ${new Date().toISOString().split('T')[0]}.
 
-CRITICAL INSTRUCTIONS:
-- You MUST answer based on the data provided above. Analyze the JSON data carefully.
-- If asked about stock levels, CHECK the qty values in the inventory data and report them.
-- If asked about expiring items, CALCULATE days remaining from today's date vs the expiry field.
-- If asked about PPIC schedule, CREATE one based on expiry dates, current stock levels, and production priorities.
-- If asked about empty slots, FILTER slots where occupied is false.
-- If asked about cold-chain, ANALYZE the temperature data and flag any anomalies.
-- NEVER say "I don't have that data" or "I cannot help" — always provide the BEST answer possible with the available data.
-- If data is incomplete, make reasonable inferences and state your assumptions clearly.
+INSTRUCTIONS:
+- Answer based on the data above. Analyze JSON carefully.
+- For stock levels: check qty values. For expiring items: calculate days from today vs expiry field.
+- For PPIC schedule: use expiry dates, stock levels, production priorities.
+- For empty slots: filter where occupied is false. For cold-chain: analyze temps, flag anomalies.
+- NEVER say "I don't have data". Always provide the best answer with available data.
+- Be concise, professional. Use Markdown (bold, bullets, tables).
 
-RESPONSE STYLE:
-- Respond in a warm, professional, and conversational tone — like a knowledgeable colleague.
-- Use bullet points and tables when they help clarity.
-- Be concise but thorough. No fluff, but don't skip important details.
-- Use Markdown formatting (bold, bullets, tables) for readability.
-- Default language: English (unless user writes in Indonesian, then respond in Indonesian).
+CRITICAL LANGUAGE RULE:
+You MUST ALWAYS respond in the SAME language as the user's message. Detect the language of the user's question and reply in that exact language. If the question is in English, your entire response must be in English. If in Indonesian, respond in Indonesian. If in French, respond in French. Never mix languages.`;
 
-User's question: "${msg}"
-`;
-
-      // 3. Build request parts
-      const parts = [{ text: fullPrompt }];
+      // 3. Build user message parts
+      const userParts = [{ text: msg }];
 
       // If file is attached, include as inline data
       if (currentFileData && currentFile) {
         const mimeType = currentFile.type || 'application/octet-stream';
         const base64Data = currentFileData.split(',')[1];
         if (base64Data) {
-          parts.push({
+          userParts.push({
             inline_data: {
               mime_type: mimeType,
               data: base64Data
@@ -353,28 +351,56 @@ User's question: "${msg}"
         }
       }
 
-      // 4. Request Gemini API
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || 'AIzaSyCk7MLn1egt_KdMnsaCOnh4bw1kS-B-K3I';
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      // 4. Request Gemini API with model fallback chain
+      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+      const modelFallbackChain = [
+        'gemini-2.5-flash-lite',
+        'gemini-2.0-flash-lite',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+      ];
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts
-            }
-          ]
-        })
-      });
+      let lastError = null;
+      let replyText = null;
 
-      if (!res.ok) {
-        throw new Error('API request failed');
+      for (const model of modelFallbackChain) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: systemPrompt }] },
+              contents: [{ role: 'user', parts: userParts }]
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+            if (replyText) break; // Success!
+          } else if (res.status === 429) {
+            // Rate limited — try next model
+            console.warn(`Model ${model} rate limited, trying next...`);
+            lastError = `Rate limited on ${model}`;
+            continue;
+          } else {
+            const errText = await res.text();
+            console.error(`Model ${model} failed:`, errText);
+            lastError = errText;
+            continue;
+          }
+        } catch (fetchErr) {
+          console.error(`Model ${model} fetch error:`, fetchErr);
+          lastError = fetchErr.message;
+          continue;
+        }
       }
 
-      const data = await res.json();
-      const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not process your request at this moment.';
+      if (!replyText) {
+        throw new Error(lastError || 'All models exhausted');
+      }
 
       const aiMsg = {
         id: getNextMsgId(),

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { NotificationProvider, useNotifications } from '@/lib/notifications';
-import { ZONES } from '@/lib/mockData';
+import { getDynamicZones } from '@/lib/mockData';
 import Sidebar from '@/components/Sidebar';
 import ChatbotOverlay from '@/components/ChatbotOverlay';
 import { Bell, Settings as SettingsIcon, ChevronDown, User, Key, Activity, LogOut, Search, AlertTriangle, Calendar, Bot, LayoutDashboard, Map, Thermometer, CalendarClock, Upload, FileBarChart, Database, ShieldCheck, Package, MapPin, Info, Snowflake, UploadCloud, ClipboardList, Monitor } from 'lucide-react';
@@ -75,9 +75,9 @@ function DashboardLayoutInner({ children }) {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([
     {
-      id: 1,
+      id: Date.now(),
       sender: 'ai',
-      text: `Hey there! I'm your AromaSys AI Copilot, connected live to the warehouse database. I can help you check stock levels, find empty slots, track expiry dates, monitor cold-chain temps, or even draft a PPIC schedule. Just ask me anything about your warehouse operations and I'll dig into the data for you.`,
+      text: `Hey there! I'm Aro, your AromaSys AI Copilot, connected live to the warehouse database. I can help you check stock levels, find empty slots, track expiry dates, monitor cold-chain temps, or even draft a PPIC schedule. Just ask me anything about your warehouse operations and I'll dig into the data for you.`,
       time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     }
   ]);
@@ -138,9 +138,10 @@ function DashboardLayoutInner({ children }) {
 
     // Immediate zone matching from ZONES constant
     const query = searchQuery.toLowerCase();
-    const matchedZones = ZONES.filter(z =>
-      z.id.toLowerCase().includes(query) ||
+    const dynamicZones = getDynamicZones();
+    const matchedZones = dynamicZones.filter(z =>
       z.name.toLowerCase().includes(query) ||
+      z.id.toLowerCase().includes(query) ||
       z.type.toLowerCase().includes(query)
     );
     setZoneResults(matchedZones.slice(0, 5));
@@ -487,6 +488,17 @@ function DashboardLayoutInner({ children }) {
 
             <button
               className="topbar-btn"
+              aria-label="Production Copilot"
+              title="Production Copilot"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsChatOpen(true);
+              }}
+            >
+              <Bot size={18} />
+            </button>
+            <button
+              className="topbar-btn"
               aria-label="Settings"
               title="Settings"
               onClick={() => router.push('/settings/profile')}
@@ -571,17 +583,7 @@ function DashboardLayoutInner({ children }) {
           {children}
         </main>
 
-        {/* Floating Chatbot Button — green Bot icon (Req 13.1, 13.2, 13.3) */}
-        {!isChatOpen && (
-          <button
-            className="fab-chatbot"
-            onClick={() => setIsChatOpen(true)}
-            aria-label="Open Production Copilot"
-            title="Open Production Copilot"
-          >
-            <Bot size={32} />
-          </button>
-        )}
+        {/* Floating Chatbot Button — Removed to move to navbar */}
 
         {/* Chatbot Overlay (Req 13.4, 13.8, 13.9) */}
         <ChatbotOverlay

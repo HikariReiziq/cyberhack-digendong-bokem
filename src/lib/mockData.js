@@ -20,6 +20,24 @@ export const ZONES = [
   { id: 'E', name: 'Zona E — Bahan Berbahaya', color: '#ef4444', type: 'hazardous', tempMin: 15, tempMax: 25 },
 ];
 
+export function getDynamicZones() {
+  if (typeof window === 'undefined') return ZONES;
+  try {
+    const custom = JSON.parse(localStorage.getItem('aromasys_interactive_zones') || '[]');
+    const customMapped = custom.map(z => ({
+      id: z.id,
+      name: z.name || `Zone ${z.id}`,
+      color: '#4ade80',
+      type: 'custom',
+      tempMin: z.hasTempSensor ? 15 : null,
+      tempMax: z.hasTempSensor ? 25 : null
+    }));
+    return [...ZONES, ...customMapped];
+  } catch (e) {
+    return ZONES;
+  }
+}
+
 // ---------- Warehouse Slots ----------
 export const SLOTS = [];
 const ROWS = ['A', 'B', 'C', 'D', 'E'];

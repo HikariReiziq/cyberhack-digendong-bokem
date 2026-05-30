@@ -1,12 +1,12 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import './login.css';
 
-export default function LoginPage() {
+function LoginContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('');
@@ -14,12 +14,23 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
-  const { user, login } = useAuth();
+  const { user, login, logout } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
-    if (user) router.push('/dashboard');
-  }, [user, router]);
+    if (searchParams.get('session') === 'expired' && user) {
+      logout();
+      setError('Your session has expired. Please sign in again.');
+      // Remove query param from URL without refreshing
+      router.replace('/login');
+      return;
+    }
+
+    if (user && searchParams.get('session') !== 'expired') {
+      router.push('/dashboard');
+    }
+  }, [user, router, searchParams, logout]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -35,7 +46,7 @@ export default function LoginPage() {
     }
   }
 
-  if (user) return null;
+  if (user && searchParams.get('session') !== 'expired') return null;
 
   return (
     <div className="auth-container">
@@ -159,5 +170,13 @@ export default function LoginPage() {
         </span>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#e0e7df' }}><div className="spinner spinner-lg"></div></div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

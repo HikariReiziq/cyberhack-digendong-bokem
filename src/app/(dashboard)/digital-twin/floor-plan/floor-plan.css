@@ -230,25 +230,33 @@
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
-  animation: fadeIn 150ms ease-out;
+  justify-content: flex-end; /* Align right */
+  animation: fadeIn 200ms ease-out;
 }
 
 .floor-plan-popup-card {
   background: var(--color-bg-surface);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-xl);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+  border-left: 1px solid var(--color-border-default);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.1);
   padding: var(--space-6);
-  width: 100%;
-  max-width: 420px;
-  max-height: 85vh;
+  width: 360px; /* Lebar 360px as per desain.md */
+  height: 100vh;
+  max-height: 100vh;
+  border-radius: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  animation: slideInRight 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 
 .popup-header {
@@ -797,4 +805,44 @@
 .fp-rec-priority-critical {
   background: #FFDAD6;
   color: #93000A;
+}
+
+/* Custom Interactive Zones Resize Handles */
+.resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: white;
+  border: 2px solid var(--color-brand-primary);
+  border-radius: 50%;
+  pointer-events: auto;
+  z-index: 30;
+}
+
+.resize-handle.top {
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: n-resize;
+}
+
+.resize-handle.bottom {
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: s-resize;
+}
+
+.resize-handle.left {
+  top: 50%;
+  left: -6px;
+  transform: translateY(-50%);
+  cursor: w-resize;
+}
+
+.resize-handle.right {
+  top: 50%;
+  right: -6px;
+  transform: translateY(-50%);
+  cursor: e-resize;
 }

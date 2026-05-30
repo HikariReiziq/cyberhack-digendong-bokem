@@ -330,7 +330,18 @@ export default function ProfilePage() {
                     <Upload size={16} aria-hidden="true" />
                     Choose Photo
                   </button>
-                  <span className="profile-avatar-hint">JPG, PNG, or GIF. Max 2MB.</span>
+                  <span className="profile-avatar-hint" style={{ display: 'block', marginTop: '12px' }}>Atau masukkan URL Foto Online:</span>
+                  <input
+                    type="url"
+                    className="input"
+                    placeholder="https://example.com/photo.jpg"
+                    value={avatarPreview?.startsWith('http') ? avatarPreview : ''}
+                    onChange={(e) => {
+                      setAvatarPreview(e.target.value);
+                      setAvatarBase64(e.target.value);
+                    }}
+                    style={{ marginBottom: '8px' }}
+                  />
                   {avatarError && (
                     <div className="profile-avatar-error" role="alert">
                       <AlertCircle size={14} aria-hidden="true" />

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import pool from '@/lib/db';
+import { signJwt } from '@/utils/jwt';
 
 export async function POST(request) {
   try {
@@ -43,7 +44,15 @@ export async function POST(request) {
       [new Date().toISOString().replace('T', ' ').substring(0, 16), user.name, user.role, 'Login', `User ${user.name} logged in successfully`, 'Auth']
     );
 
-    return NextResponse.json({
+    // Sign JWT
+    const token = await signJwt({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    }, '2h'); // Expires in 2 hours
+
+    const response = NextResponse.json({
       success: true,
       user: {
         id: user.id,
@@ -53,6 +62,16 @@ export async function POST(request) {
         avatar: user.avatar || null
       }
     });
+
+    response.cookies.set('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 2 // 2 hours in seconds
+    });
+
+    return response;
   } catch (error) {
     console.error('Error in login API:', error);
     return NextResponse.json(

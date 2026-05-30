@@ -53,10 +53,12 @@ export async function PUT(request) {
 
     // Avatar update flow
     if (avatar !== undefined) {
-      // Validate avatar format
-      if (!AVATAR_FORMAT_REGEX.test(avatar)) {
+      // Validate avatar format (either base64 data URI or valid http/https URL)
+      const isBase64 = AVATAR_FORMAT_REGEX.test(avatar);
+      const isUrl = /^https?:\/\/.+/.test(avatar);
+      if (!isBase64 && !isUrl) {
         return NextResponse.json(
-          { success: false, error: 'Invalid image format. Supported: PNG, JPEG, WebP' },
+          { success: false, error: 'Format gambar tidak didukung atau URL tidak valid.' },
           { status: 400 }
         );
       }

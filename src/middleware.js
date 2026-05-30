@@ -1,6 +1,28 @@
 import { NextResponse } from 'next/server';
+import { verifyJwt } from '@/utils/jwt';
 
-export function middleware(request) {
+export async function middleware(request) {
+  const { pathname } = request.nextUrl;
+  
+  // Define protected paths
+  const isProtectedRoute = pathname.startsWith('/dashboard') || 
+                           pathname.startsWith('/digital-twin') || 
+                           pathname.startsWith('/copilot') || 
+                           pathname.startsWith('/settings');
+
+  if (isProtectedRoute) {
+    const token = request.cookies.get('token')?.value;
+    const verifiedToken = token && await verifyJwt(token);
+    
+    if (!verifiedToken) {
+      // Token is missing or invalid, redirect to login
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      url.searchParams.set('session', 'expired');
+      return NextResponse.redirect(url);
+    }
+  }
+
   const response = NextResponse.next();
   
   // Security headers

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ZONES } from '@/lib/mockData';
+import { getDynamicZones, TEMPERATURE_DATA } from '@/lib/mockData';
 import {
   Thermometer,
   AlertTriangle,
@@ -12,7 +12,10 @@ import {
 import './cold-chain.css';
 
 export default function ColdChainPage() {
-  const [selectedZone, setSelectedZone] = useState('A');
+  const [dynamicZones, setDynamicZones] = useState([]);
+  useEffect(() => { setDynamicZones(getDynamicZones()); }, []);
+
+  const [selectedZone, setSelectedZone] = useState('D');
   const [showTakeActionModal, setShowTakeActionModal] = useState(false);
   const [ticketForm, setTicketForm] = useState({ desc: '', priority: 'high' });
   const [ticketSuccess, setTicketSuccess] = useState(false);
@@ -45,7 +48,7 @@ export default function ColdChainPage() {
     Promise.resolve().then(fetchTemperatures);
   }, []);
 
-  const zone = ZONES.find(z => z.id === selectedZone) || ZONES[0];
+  const zone = dynamicZones.length ? (dynamicZones.find(z => z.id === selectedZone) || dynamicZones[0]) : { id: 'D', name: 'Loading', tempMin: -5, tempMax: 5 };
   const readings = temperatures[selectedZone] || [];
   const maxTemp = readings.length > 0 ? Math.max(...readings.map(r => r.temperature)) : 0;
   const minTemp = readings.length > 0 ? Math.min(...readings.map(r => r.temperature)) : 0;
@@ -102,7 +105,7 @@ export default function ColdChainPage() {
 
   // Determine zone status for each card
   const getZoneStatus = (zoneId) => {
-    const zoneData = ZONES.find(z => z.id === zoneId);
+    const zoneData = dynamicZones.find(z => z.id === zoneId);
     const zoneReadings = temperatures[zoneId] || [];
     if (zoneReadings.length === 0) return 'safe';
     const zoneAnomalies = zoneReadings.filter(r => r.temperature > zoneData.tempMax || r.temperature < zoneData.tempMin);
@@ -141,9 +144,9 @@ export default function ColdChainPage() {
 
   // Zone card configuration
   const zoneCards = [
-    { id: 'A', label: 'Zone A', desc: 'RAW MATERIAL STORAGE', defaultType: 'stable', targetRange: `${ZONES[0].tempMin}°C to ${ZONES[0].tempMax}°C` },
-    { id: 'B', label: 'Zone B', desc: 'DISTILLATION PER-STAGE', defaultType: 'rising', targetRange: `${ZONES[1].tempMin}°C to ${ZONES[1].tempMax}°C` },
-    { id: 'C', label: 'Zone C', desc: 'FINAL PRODUCT VAULT', defaultType: 'wavy', targetRange: `${ZONES[2].tempMin}°C to ${ZONES[2].tempMax}°C` },
+    { id: 'A', label: 'Zone A', desc: 'RAW MATERIAL STORAGE', defaultType: 'stable', targetRange: `20°C to 30°C` },
+    { id: 'B', label: 'Zone B', desc: 'DISTILLATION PER-STAGE', defaultType: 'rising', targetRange: `15°C to 25°C` },
+    { id: 'C', label: 'Zone C', desc: 'FINAL PRODUCT VAULT', defaultType: 'wavy', targetRange: `18°C to 28°C` },
   ];
 
   const statusLabels = { safe: 'Stable', danger: 'Critical', warning: 'Warning' };

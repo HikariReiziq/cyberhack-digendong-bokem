@@ -397,6 +397,12 @@ If you cannot find any items, return an empty array [].`;
       let savedCount = 0;
       let skippedCount = 0;
       for (const item of ocrResult) {
+        if (isDuplicate(item.name)) {
+          console.warn(`Skipping duplicate item: ${item.name}`);
+          skippedCount++;
+          continue;
+        }
+
         const zone = getZoneForCategory(item.category);
         let slot = availableSlots.find(s => s.zone === zone && !s.occupied);
         
