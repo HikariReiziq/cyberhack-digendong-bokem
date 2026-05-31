@@ -10,7 +10,8 @@ import {
   Save,
   History,
   Microscope,
-  Leaf,
+  Sprout,
+  Apple,
   Trash2,
   AlertTriangle,
 } from "lucide-react";
@@ -359,7 +360,7 @@ export default function QCPage() {
               : "bg-white border border-stone-200 text-stone-600 hover:bg-stone-50"
           }`}
         >
-          <Leaf className="w-4 h-4" />
+          <Sprout className="w-4 h-4" />
           Plant
         </button>
         <button
@@ -373,7 +374,7 @@ export default function QCPage() {
               : "bg-white border border-stone-200 text-stone-600 hover:bg-stone-50"
           }`}
         >
-          <Leaf className="w-4 h-4" />
+          <Apple className="w-4 h-4" />
           Fruit
         </button>
       </div>

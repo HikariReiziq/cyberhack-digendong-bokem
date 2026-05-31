@@ -1,22 +1,26 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { 
-  FileSpreadsheet, 
-  Calendar, 
-  FileText, 
-  Table, 
-  ArrowRight, 
-  CheckCircle2, 
-  AlertTriangle, 
-  TrendingUp, 
-  TrendingDown, 
-  Sparkles, 
-  RefreshCw, 
+import {
+  FileSpreadsheet,
+  Calendar,
+  FileText,
+  Table,
+  ArrowRight,
+  CheckCircle2,
+  AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Sparkles,
+  RefreshCw,
   Download,
   Share2,
   FileCheck2,
-  Eye
+  Eye,
+  Package,
+  Layers,
+  Clock,
+  ShieldAlert,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
@@ -91,16 +95,21 @@ function renderMarkdown(text: string): string {
   // Italic: *text*
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
 
-  // Unordered lists: lines starting with - 
-  html = html.replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>');
-  // Wrap consecutive <li> in <ul>
-  html = html.replace(/((?:<li[^>]*>.*<\/li>\n?)+)/g, '<ul class="my-1">$1</ul>');
+  // Collapse blank lines between consecutive list items so they stay in one <ul>
+  html = html.replace(/(^- .+$)\n\n+(^- )/gm, '$1\n$2');
+
+  // Unordered lists: lines starting with -
+  html = html.replace(/^- (.+)$/gm, '<li class="ml-4 list-disc leading-snug">$1</li>');
+  // Wrap consecutive <li> (possibly separated only by newlines) into a single <ul>
+  html = html.replace(/((?:<li[^>]*>.*<\/li>\n?)+)/g, '<ul class="mt-1 mb-0 space-y-0">$1</ul>');
 
   // Line breaks for remaining lines
   html = html.replace(/\n/g, '<br/>');
   // Clean up extra <br/> around block elements
   html = html.replace(/<br\/>\s*(<(?:h[1-6]|ul|table|\/table|\/ul))/g, '$1');
   html = html.replace(/(<\/(?:h[1-6]|ul|table)>)\s*<br\/>/g, '$1');
+  // Remove <br/> immediately before <strong> section headers (they get their own margin)
+  html = html.replace(/<br\/>\s*(<strong>)/g, '$1');
 
   return html;
 }
@@ -301,12 +310,25 @@ ${nearExpiryItems.length > 0 ? nearExpiryItems.map(i => `- ${i.name} (${i.catego
 === REQUESTED ANALYSIS ===
 ${focusedPrompt}
 
-Provide a concise analysis (3–5 sentences) in English that:
-1. Describes the current specific warehouse conditions
-2. Identifies real risks based on the data (temperature, expiry, stock)
-3. Gives 2–3 immediately actionable operational recommendations
-4. If critical/expired items exist: prioritize disposal/rotation actions
-5. If any zone has issues (temperature, utilization): explain the impact`;
+Respond in English using this EXACT structure. Follow the formatting rules strictly:
+
+[One sentence summarizing the overall warehouse status — plain text, no bold]
+
+**Key Findings:**
+- [Finding 1 — specific number or data point]
+- [Finding 2 — specific number or data point]
+- [Finding 3 — specific number or data point, if relevant]
+
+**Immediate Actions Required:**
+- [Action 1 — concrete, specific, actionable]
+- [Action 2 — concrete, specific, actionable]
+- [Action 3 — concrete, specific, actionable, if relevant]
+
+FORMATTING RULES (must follow exactly):
+- Do NOT add blank lines between bullet points — bullets must be on consecutive lines
+- Always add a blank line before **Key Findings:** and before **Immediate Actions Required:**
+- Keep each bullet to one short sentence
+- Use the actual numbers from the data above`;
 
       const result = await callAI(prompt, 'chatbot');
       setAiAnalysis(result);
@@ -377,6 +399,73 @@ Provide a concise analysis (3–5 sentences) in English that:
       }
     };
   }, [inventory, slots, logs]);
+
+  // 5. Extra computed data for rich report sections
+  const reportExtras = useMemo(() => {
+    const total = inventory.length || 1;
+
+    // Status distribution
+    const statusCounts = {
+      aman: inventory.filter(i => i.status === 'Aman').length,
+      warning: inventory.filter(i => i.status === 'Warning').length,
+      kritis: inventory.filter(i => i.status === 'Kritis').length,
+      expired: inventory.filter(i => i.status === 'Expired').length,
+    };
+
+    // Near-expiry tiers
+    const expiredItems = inventory
+      .filter(i => getDaysLeft(i.expiry) < 0)
+      .sort((a, b) => getDaysLeft(a.expiry) - getDaysLeft(b.expiry))
+      .slice(0, 5);
+    const criticalItems = inventory
+      .filter(i => { const d = getDaysLeft(i.expiry); return d >= 0 && d <= 7; })
+      .sort((a, b) => getDaysLeft(a.expiry) - getDaysLeft(b.expiry))
+      .slice(0, 5);
+    const warningItems = inventory
+      .filter(i => { const d = getDaysLeft(i.expiry); return d > 7 && d <= 30; })
+      .sort((a, b) => getDaysLeft(a.expiry) - getDaysLeft(b.expiry))
+      .slice(0, 5);
+
+    // Zone utilization
+    const zoneMap = new Map<string, { occupied: number; total: number }>();
+    slots.forEach(slot => {
+      const zone = (slot as any).zone || (slot as any).row || 'Unknown';
+      if (!zoneMap.has(zone)) zoneMap.set(zone, { occupied: 0, total: 0 });
+      const z = zoneMap.get(zone)!;
+      z.total++;
+      if (slot.occupied) z.occupied++;
+    });
+    const zoneData = Array.from(zoneMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([zone, data]) => ({
+        zone,
+        occupied: data.occupied,
+        total: data.total,
+        pct: data.total > 0 ? Math.round((data.occupied / data.total) * 100) : 0,
+      }));
+
+    // Category breakdown (top 6 by total qty)
+    const catMap = new Map<string, { count: number; qty: number }>();
+    inventory.forEach(item => {
+      const cat = item.category || 'Other';
+      if (!catMap.has(cat)) catMap.set(cat, { count: 0, qty: 0 });
+      const c = catMap.get(cat)!;
+      c.count++;
+      c.qty += item.qty || 0;
+    });
+    const maxQty = Math.max(...Array.from(catMap.values()).map(c => c.qty), 1);
+    const categoryData = Array.from(catMap.entries())
+      .sort(([, a], [, b]) => b.qty - a.qty)
+      .slice(0, 6)
+      .map(([cat, data]) => ({
+        cat,
+        count: data.count,
+        qty: Math.round(data.qty),
+        pct: Math.round((data.qty / maxQty) * 100),
+      }));
+
+    return { statusCounts, total, expiredItems, criticalItems, warningItems, zoneData, categoryData };
+  }, [inventory, slots]);
 
   const reportData = useMemo(() => {
     // Get top botanical reserves dynamically
@@ -608,8 +697,248 @@ Provide a concise analysis (3–5 sentences) in English that:
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } else {
-      // PDF format - trigger browser print dialog with custom notes included in print section
-      window.print();
+      // Build a clean, self-contained HTML document for printing
+      const allExpiry = [
+        ...reportExtras.expiredItems.map(i => ({ ...i, tier: 'Expired' as const })),
+        ...reportExtras.criticalItems.map(i => ({ ...i, tier: 'Critical' as const })),
+        ...reportExtras.warningItems.map(i => ({ ...i, tier: 'Warning' as const })),
+      ];
+
+      const metricRows = currentPreview.metrics.map(m => `
+        <div class="metric-card">
+          <div class="metric-label">${m.label}</div>
+          <div class="metric-value">${m.value} <span class="metric-unit">${m.unit}</span></div>
+          <div class="metric-trend">${m.trend}</div>
+        </div>`).join('');
+
+      const zoneRows = reportExtras.zoneData.map(z => `
+        <div class="zone-row">
+          <span class="zone-name">Zone ${z.zone}</span>
+          <div class="zone-bar-wrap"><div class="zone-bar ${z.pct > 80 ? 'bar-red' : z.pct >= 50 ? 'bar-amber' : 'bar-green'}" style="width:${z.pct}%"></div></div>
+          <span class="zone-pct ${z.pct > 80 ? 'text-red' : z.pct >= 50 ? 'text-amber' : 'text-green'}">${z.pct}%</span>
+          <span class="zone-slots">${z.occupied}/${z.total} slots</span>
+        </div>`).join('');
+
+      const categoryRows = reportExtras.categoryData.map(c => `
+        <div class="cat-row">
+          <span class="cat-name">${c.cat}</span>
+          <div class="cat-bar-wrap"><div class="cat-bar" style="width:${c.pct}%"></div></div>
+          <span class="cat-qty">${c.qty.toLocaleString()} kg · ${c.count} items</span>
+        </div>`).join('');
+
+      const expiryRows = allExpiry.length > 0 ? allExpiry.map(i => {
+        const d = getDaysLeft(i.expiry);
+        const tierClass = i.tier === 'Expired' ? 'tier-expired' : i.tier === 'Critical' ? 'tier-critical' : 'tier-warning';
+        const label = i.tier === 'Expired' ? 'EXPIRED' : `${d}d left`;
+        return `<div class="expiry-row ${tierClass}">
+          <div><strong>${i.name}</strong><span class="expiry-sub">Zone ${(i as any).zone} · ${i.id}</span></div>
+          <span class="expiry-badge">${label}</span>
+        </div>`;
+      }).join('') : '<p class="no-data">No expiry alerts at this time.</p>';
+
+      const aiHtml = aiAnalysis ? renderMarkdown(aiAnalysis) : '<p class="no-data">AI analysis not generated yet.</p>';
+
+      const reserveRows = currentPreview.reserves.map(r => {
+        const pct = Math.min(100, Math.round((r.current / r.max) * 100));
+        return `<div class="reserve-row">
+          <span class="reserve-name">${r.name}</span>
+          <div class="reserve-bar-wrap"><div class="reserve-bar" style="width:${pct}%"></div></div>
+          <span class="reserve-pct">${Math.round(r.current).toLocaleString()} / ${Math.round(r.max).toLocaleString()} ${selectedType === 'weekly' ? 'days' : 'kg'}</span>
+        </div>`;
+      }).join('');
+
+      const notesHtml = customNotes.trim() ? `
+        <div class="section">
+          <div class="section-header"><span class="section-dot amber-dot"></span>Custom Notes</div>
+          <div class="notes-body">${renderMarkdown(customNotes)}</div>
+        </div>` : '';
+
+      const htmlDoc = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>AromaSys Report — ${currentPreview.title}</title>
+<style>
+  @page { margin: 14mm 16mm; size: A4 portrait; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; font-size: 10pt; color: #1c1b1f; background: #fff; }
+
+  /* ── Cover Banner ── */
+  .banner { background: #2c742f; color: #fff; padding: 18px 22px 14px; page-break-inside: avoid; }
+  .banner-title { font-size: 20pt; font-weight: 900; letter-spacing: -0.5px; margin: 0; }
+  .banner-sub { font-size: 9pt; opacity: 0.8; margin: 4px 0 0; }
+  .banner-meta { margin-top: 10px; display: flex; gap: 24px; flex-wrap: wrap; }
+  .banner-meta span { font-size: 8pt; opacity: 0.85; }
+  .banner-meta strong { opacity: 1; }
+
+  /* ── Section wrapper ── */
+  .section { margin-top: 14px; page-break-inside: avoid; }
+  .section-header { font-size: 8pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #2c742f; border-bottom: 1.5px solid #d7e5d8; padding-bottom: 4px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .section-dot { width: 7px; height: 7px; border-radius: 50%; background: #2c742f; display: inline-block; flex-shrink: 0; }
+  .amber-dot { background: #f59e0b; }
+  .red-dot { background: #ef4444; }
+
+  /* ── Metric cards ── */
+  .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .metric-card { background: #f5fbf3; border: 1px solid #d7e5d8; border-radius: 8px; padding: 10px 12px; }
+  .metric-label { font-size: 8pt; color: #79747e; font-weight: 600; }
+  .metric-value { font-size: 18pt; font-weight: 900; color: #1c1b1f; margin: 2px 0; line-height: 1; }
+  .metric-unit { font-size: 8pt; font-weight: 500; color: #79747e; }
+  .metric-trend { font-size: 7.5pt; color: #79747e; }
+
+  /* ── Status chips ── */
+  .status-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 6px; }
+  .status-chip { text-align: center; padding: 8px 6px; border-radius: 8px; border: 1px solid; }
+  .chip-safe { background: #f0fdf4; border-color: #bbf7d0; }
+  .chip-warning { background: #fffbeb; border-color: #fde68a; }
+  .chip-critical { background: #fff7ed; border-color: #fed7aa; }
+  .chip-expired { background: #fef2f2; border-color: #fecaca; }
+  .chip-num { font-size: 16pt; font-weight: 900; line-height: 1; }
+  .num-safe { color: #15803d; } .num-warning { color: #b45309; } .num-critical { color: #c2410c; } .num-expired { color: #b91c1c; }
+  .chip-label { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+  .chip-pct { font-size: 7pt; color: #79747e; margin-top: 1px; }
+  .status-bar { height: 5px; border-radius: 999px; overflow: hidden; display: flex; margin-top: 4px; }
+  .bar-safe { background: #22c55e; } .bar-warning-s { background: #f59e0b; } .bar-critical-s { background: #f97316; } .bar-expired-s { background: #ef4444; }
+
+  /* ── Zone utilization ── */
+  .zone-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .zone-row { display: flex; align-items: center; gap: 6px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px; }
+  .zone-name { font-size: 8pt; font-weight: 700; color: #374151; width: 44px; flex-shrink: 0; }
+  .zone-bar-wrap { flex: 1; height: 5px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+  .zone-bar { height: 100%; border-radius: 999px; }
+  .bar-red { background: #ef4444; } .bar-amber { background: #f59e0b; } .bar-green { background: #22c55e; }
+  .zone-pct { font-size: 7.5pt; font-weight: 700; width: 28px; text-align: right; flex-shrink: 0; }
+  .zone-slots { font-size: 7pt; color: #9ca3af; width: 52px; text-align: right; flex-shrink: 0; }
+  .text-red { color: #ef4444; } .text-amber { color: #f59e0b; } .text-green { color: #22c55e; }
+
+  /* ── Expiry alerts ── */
+  .expiry-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; border: 1px solid; }
+  .tier-expired { background: #fef2f2; border-color: #fecaca; }
+  .tier-critical { background: #fff7ed; border-color: #fed7aa; }
+  .tier-warning { background: #fffbeb; border-color: #fde68a; }
+  .expiry-row strong { font-size: 8.5pt; font-weight: 700; display: block; color: #1c1b1f; }
+  .expiry-sub { font-size: 7pt; color: #9ca3af; display: block; margin-top: 1px; }
+  .expiry-badge { font-size: 7.5pt; font-weight: 800; padding: 2px 7px; border-radius: 999px; white-space: nowrap; background: #fff; border: 1px solid currentColor; }
+  .tier-expired .expiry-badge { color: #b91c1c; }
+  .tier-critical .expiry-badge { color: #c2410c; }
+  .tier-warning .expiry-badge { color: #b45309; }
+
+  /* ── Reserves & Categories ── */
+  .reserve-row, .cat-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .reserve-name, .cat-name { font-size: 8pt; font-weight: 600; color: #374151; width: 140px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reserve-bar-wrap, .cat-bar-wrap { flex: 1; height: 5px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+  .reserve-bar { height: 100%; background: #2c742f; border-radius: 999px; }
+  .cat-bar { height: 100%; background: #2c742f; border-radius: 999px; }
+  .reserve-pct, .cat-qty { font-size: 7.5pt; color: #79747e; width: 130px; text-align: right; flex-shrink: 0; }
+
+  /* ── AI Analysis ── */
+  .ai-box { background: #f5fbf3; border: 1px solid #d7e5d8; border-radius: 8px; padding: 10px 12px; }
+  .ai-box strong { font-weight: 700; color: #1c1b1f; display: block; margin-top: 8px; }
+  .ai-box strong:first-child { margin-top: 0; }
+  .ai-box ul { margin: 3px 0 0 14px; padding: 0; }
+  .ai-box li { font-size: 8.5pt; color: #374151; line-height: 1.5; list-style: disc; }
+  .ai-box p, .ai-box br { display: none; }
+
+  /* ── Trend & Notes ── */
+  .trend-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; font-size: 8.5pt; color: #1e40af; line-height: 1.5; }
+  .notes-body { font-size: 8.5pt; color: #78350f; line-height: 1.6; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; }
+
+  .no-data { font-size: 8pt; color: #9ca3af; font-style: italic; }
+  .footer { margin-top: 18px; border-top: 1px solid #e5e7eb; padding-top: 8px; font-size: 7.5pt; color: #9ca3af; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<!-- Banner -->
+<div class="banner">
+  <div class="banner-title">AromaSys — ${currentPreview.title}</div>
+  <div class="banner-sub">${currentPreview.subtitle}</div>
+  <div class="banner-meta">
+    <span><strong>Generated:</strong> ${new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })}</span>
+    <span><strong>By:</strong> ${user?.name ?? 'Unknown'} (${user?.role ?? '-'})</span>
+    <span><strong>Period:</strong> ${startDate} – ${endDate}</span>
+    <span><strong>Report type:</strong> ${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)}</span>
+  </div>
+</div>
+
+<!-- Metrics -->
+<div class="section">
+  <div class="section-header"><span class="section-dot"></span>Key Metrics</div>
+  <div class="metrics-grid">${metricRows}</div>
+</div>
+
+<!-- Health Distribution -->
+<div class="section">
+  <div class="section-header"><span class="section-dot"></span>Inventory Health Distribution</div>
+  <div class="status-grid">
+    <div class="status-chip chip-safe"><div class="chip-num num-safe">${reportExtras.statusCounts.aman}</div><div class="chip-label" style="color:#15803d">Safe</div><div class="chip-pct">${Math.round((reportExtras.statusCounts.aman/reportExtras.total)*100)}%</div></div>
+    <div class="status-chip chip-warning"><div class="chip-num num-warning">${reportExtras.statusCounts.warning}</div><div class="chip-label" style="color:#b45309">Warning</div><div class="chip-pct">${Math.round((reportExtras.statusCounts.warning/reportExtras.total)*100)}%</div></div>
+    <div class="status-chip chip-critical"><div class="chip-num num-critical">${reportExtras.statusCounts.kritis}</div><div class="chip-label" style="color:#c2410c">Critical</div><div class="chip-pct">${Math.round((reportExtras.statusCounts.kritis/reportExtras.total)*100)}%</div></div>
+    <div class="status-chip chip-expired"><div class="chip-num num-expired">${reportExtras.statusCounts.expired}</div><div class="chip-label" style="color:#b91c1c">Expired</div><div class="chip-pct">${Math.round((reportExtras.statusCounts.expired/reportExtras.total)*100)}%</div></div>
+  </div>
+  <div class="status-bar">
+    <div class="bar-safe" style="width:${Math.round((reportExtras.statusCounts.aman/reportExtras.total)*100)}%"></div>
+    <div class="bar-warning-s" style="width:${Math.round((reportExtras.statusCounts.warning/reportExtras.total)*100)}%"></div>
+    <div class="bar-critical-s" style="width:${Math.round((reportExtras.statusCounts.kritis/reportExtras.total)*100)}%"></div>
+    <div class="bar-expired-s" style="width:${Math.round((reportExtras.statusCounts.expired/reportExtras.total)*100)}%"></div>
+  </div>
+</div>
+
+<!-- Expiry Alerts -->
+${allExpiry.length > 0 ? `
+<div class="section">
+  <div class="section-header"><span class="section-dot red-dot"></span>Expiry Alert Summary <span style="font-weight:500;color:#9ca3af;margin-left:auto;font-size:7.5pt">${allExpiry.length} items flagged</span></div>
+  ${expiryRows}
+</div>` : ''}
+
+<!-- Zone Utilization -->
+<div class="section">
+  <div class="section-header"><span class="section-dot"></span>Zone Utilization</div>
+  <div class="zone-grid">${zoneRows}</div>
+</div>
+
+<!-- Category Breakdown -->
+${reportExtras.categoryData.length > 0 ? `
+<div class="section">
+  <div class="section-header"><span class="section-dot"></span>Stock by Category</div>
+  ${categoryRows}
+</div>` : ''}
+
+<!-- Reserves -->
+<div class="section">
+  <div class="section-header"><span class="section-dot"></span>${currentPreview.reservesTitle}</div>
+  ${reserveRows}
+</div>
+
+<!-- AI Analysis -->
+<div class="section">
+  <div class="section-header"><span class="section-dot"></span>Copilot AI Analysis</div>
+  <div class="ai-box">${aiHtml}</div>
+</div>
+
+<!-- Trend Analysis -->
+<div class="section">
+  <div class="section-header"><span class="section-dot"></span>Trend Analysis</div>
+  <div class="trend-box">${currentPreview.trendAnalysis}</div>
+</div>
+
+${notesHtml}
+
+<div class="footer">
+  <span>AromaSys Warehouse Intelligence Platform</span>
+  <span>Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+</div>
+
+</body>
+</html>`;
+
+      const printWindow = window.open('', '_blank', 'width=900,height=700');
+      if (!printWindow) { alert('Please allow pop-ups to generate the PDF.'); return; }
+      printWindow.document.open();
+      printWindow.document.write(htmlDoc);
+      printWindow.document.close();
+      // Small delay to let the document fully render before triggering print
+      setTimeout(() => { printWindow.print(); }, 600);
     }
   };
 
@@ -636,13 +965,7 @@ Provide a concise analysis (3–5 sentences) in English that:
 
   return (
     <div className="space-y-6 pb-16 text-left relative font-sans">
-      <style dangerouslySetInnerHTML={{ __html: `
-        @media print {
-          body * { visibility: hidden; }
-          .print-section, .print-section * { visibility: visible; }
-          .print-section { position: absolute; left: 0; top: 0; width: 100%; }
-        }
-      `}} />
+      {/* Print styles are injected dynamically in handlePrint to avoid positioning issues */}
       
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -867,6 +1190,155 @@ Provide a concise analysis (3–5 sentences) in English that:
             })}
           </div>
 
+          {/* ── Inventory Health Distribution ─────────────────── */}
+          <div className="border border-[#AAE970]/10 bg-[#F5FBF3]/30 rounded-xl p-5 space-y-3">
+            <div className="flex items-center gap-2 border-b border-stone-100 pb-2">
+              <CheckCircle2 className="w-4 h-4 text-[#2C742F]" />
+              <h3 className="text-green-950 text-sm font-bold">Inventory Health Distribution</h3>
+              <span className="ml-auto text-[9px] text-stone-400 font-bold uppercase tracking-wider">{reportExtras.total} total items</span>
+            </div>
+            {/* Status chips */}
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: 'Safe', count: reportExtras.statusCounts.aman, bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', bar: 'bg-emerald-500' },
+                { label: 'Warning', count: reportExtras.statusCounts.warning, bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', bar: 'bg-amber-400' },
+                { label: 'Critical', count: reportExtras.statusCounts.kritis, bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', bar: 'bg-orange-500' },
+                { label: 'Expired', count: reportExtras.statusCounts.expired, bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
+              ].map(({ label, count, bg, border, text, bar }) => (
+                <div key={label} className={`${bg} border ${border} rounded-xl p-3 text-center`}>
+                  <p className={`text-2xl font-black ${text}`}>{count}</p>
+                  <p className={`text-[9px] font-bold ${text} uppercase tracking-wide mt-0.5`}>{label}</p>
+                  <p className="text-[9px] text-stone-400 mt-1">{reportExtras.total > 0 ? Math.round((count / reportExtras.total) * 100) : 0}%</p>
+                </div>
+              ))}
+            </div>
+            {/* Stacked proportion bar */}
+            <div className="w-full h-2.5 bg-stone-100 rounded-full overflow-hidden flex">
+              {[
+                { count: reportExtras.statusCounts.aman, color: 'bg-emerald-500' },
+                { count: reportExtras.statusCounts.warning, color: 'bg-amber-400' },
+                { count: reportExtras.statusCounts.kritis, color: 'bg-orange-500' },
+                { count: reportExtras.statusCounts.expired, color: 'bg-red-500' },
+              ].map(({ count, color }, i) => (
+                <div
+                  key={i}
+                  className={`h-full ${color} transition-all`}
+                  style={{ width: `${reportExtras.total > 0 ? (count / reportExtras.total) * 100 : 0}%` }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* ── Near-Expiry Alert Table ───────────────────────── */}
+          {(reportExtras.expiredItems.length > 0 || reportExtras.criticalItems.length > 0 || reportExtras.warningItems.length > 0) && (
+            <div className="border border-[#AAE970]/10 bg-[#F5FBF3]/30 rounded-xl p-5 space-y-3">
+              <div className="flex items-center gap-2 border-b border-stone-100 pb-2">
+                <Clock className="w-4 h-4 text-red-500" />
+                <h3 className="text-green-950 text-sm font-bold">Expiry Alert Summary</h3>
+                <span className="ml-auto text-[9px] text-stone-400 font-bold uppercase tracking-wider">
+                  {reportExtras.expiredItems.length + reportExtras.criticalItems.length + reportExtras.warningItems.length} items flagged
+                </span>
+              </div>
+              <div className="space-y-1">
+                {/* Expired */}
+                {reportExtras.expiredItems.map(item => (
+                  <div key={item.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-red-800 truncate">{item.name}</p>
+                      <p className="text-[9px] text-red-500 font-semibold">Zone {(item as any).zone} · {item.id}</p>
+                    </div>
+                    <span className="text-[10px] font-black text-red-600 bg-red-100 px-2 py-0.5 rounded-full shrink-0 ml-2">EXPIRED</span>
+                  </div>
+                ))}
+                {/* Critical ≤7 days */}
+                {reportExtras.criticalItems.map(item => {
+                  const d = getDaysLeft(item.expiry);
+                  return (
+                    <div key={item.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-orange-50 border border-orange-100">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-orange-800 truncate">{item.name}</p>
+                        <p className="text-[9px] text-orange-500 font-semibold">Zone {(item as any).zone} · {item.id}</p>
+                      </div>
+                      <span className="text-[10px] font-black text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full shrink-0 ml-2">{d}d left</span>
+                    </div>
+                  );
+                })}
+                {/* Warning ≤30 days */}
+                {reportExtras.warningItems.map(item => {
+                  const d = getDaysLeft(item.expiry);
+                  return (
+                    <div key={item.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-amber-800 truncate">{item.name}</p>
+                        <p className="text-[9px] text-amber-500 font-semibold">Zone {(item as any).zone} · {item.id}</p>
+                      </div>
+                      <span className="text-[10px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full shrink-0 ml-2">{d}d left</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Zone Utilization Grid ─────────────────────────── */}
+          {reportExtras.zoneData.length > 0 && (
+            <div className="border border-[#AAE970]/10 bg-[#F5FBF3]/30 rounded-xl p-5 space-y-3">
+              <div className="flex items-center gap-2 border-b border-stone-100 pb-2">
+                <Layers className="w-4 h-4 text-[#2C742F]" />
+                <h3 className="text-green-950 text-sm font-bold">Zone Utilization</h3>
+                <span className="ml-auto text-[9px] text-stone-400 font-bold uppercase tracking-wider">{slots.length} total slots</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {reportExtras.zoneData.map(({ zone, occupied, total, pct }) => (
+                  <div key={zone} className="bg-white rounded-xl border border-stone-100 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-stone-700">Zone {zone}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                        pct > 80 ? 'bg-red-100 text-red-600' : pct >= 50 ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                      }`}>{pct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${pct > 80 ? 'bg-red-500' : pct >= 50 ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <p className="text-[9px] text-stone-400 font-semibold">{occupied} / {total} occupied</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Category Breakdown ────────────────────────────── */}
+          {reportExtras.categoryData.length > 0 && (
+            <div className="border border-[#AAE970]/10 bg-[#F5FBF3]/30 rounded-xl p-5 space-y-3">
+              <div className="flex items-center gap-2 border-b border-stone-100 pb-2">
+                <Package className="w-4 h-4 text-[#2C742F]" />
+                <h3 className="text-green-950 text-sm font-bold">Stock by Category</h3>
+                <span className="ml-auto text-[9px] text-stone-400 font-bold uppercase tracking-wider">top {reportExtras.categoryData.length} categories</span>
+              </div>
+              <div className="space-y-2">
+                {reportExtras.categoryData.map(({ cat, count, qty, pct }) => (
+                  <div key={cat} className="flex items-center gap-3">
+                    <span className="text-[10px] font-bold text-stone-600 w-28 shrink-0 truncate">{cat}</span>
+                    <div className="flex-1 h-2 bg-stone-100 rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        className="h-full bg-[#2C742F] rounded-full"
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold text-stone-500 w-16 text-right shrink-0">
+                      {qty.toLocaleString()} kg
+                    </span>
+                    <span className="text-[9px] text-stone-400 w-8 text-right shrink-0">{count}×</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Top Botanical Reserves Progress bars */}
           <div className="border border-[#AAE970]/10 bg-[#F5FBF3]/30 rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-stone-100 pb-2">
@@ -930,9 +1402,14 @@ Provide a concise analysis (3–5 sentences) in English that:
                   </button>
                 </div>
               ) : (
-                <p className="text-stone-600 text-xs font-semibold leading-relaxed">
-                  {isRefreshingAI ? "Analyzing data with AI..." : aiAnalysis}
-                </p>
+                isRefreshingAI ? (
+                  <p className="text-stone-600 text-xs font-semibold leading-relaxed">Analyzing data with AI...</p>
+                ) : (
+                  <div
+                    className="text-stone-600 text-xs leading-relaxed [&_strong]:font-bold [&_strong]:text-stone-700 [&_strong]:block [&_strong]:mt-3 [&_ul]:mt-0.5 [&_ul]:mb-0 [&_li]:ml-4 [&_li]:list-disc [&_li]:leading-snug [&_li]:marker:text-[#2C742F]"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(aiAnalysis) }}
+                  />
+                )
               )}
             </div>
           </div>

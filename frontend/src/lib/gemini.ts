@@ -24,10 +24,10 @@ const GEMINI_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta/models';
 
 const DEFAULT_MODEL_CONFIG: ModelConfig[] = [
-  { taskType: 'floor-plan', models: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'] },
-  { taskType: 'ocr', models: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'] },
-  { taskType: 'chatbot', models: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'] },
-  { taskType: 'qc', models: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'] },
+  { taskType: 'floor-plan', models: ['gemini-2.5-flash-preview-05-20', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'] },
+  { taskType: 'ocr',        models: ['gemini-2.5-flash-preview-05-20', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'] },
+  { taskType: 'chatbot',    models: ['gemini-2.5-flash-preview-05-20', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'] },
+  { taskType: 'qc',         models: ['gemini-2.5-flash-preview-05-20', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'] },
 ];
 
 // --- Interfaces ---

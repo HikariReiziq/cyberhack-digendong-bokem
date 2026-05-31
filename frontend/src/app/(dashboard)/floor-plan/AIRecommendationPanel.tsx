@@ -283,6 +283,17 @@ export default function AIRecommendationPanel({
         }
       }
 
+      // Deduplicate rawIssues in place — same item can show up in both the slots
+      // loop and the custom zones loop when their IDs match, producing duplicate keys.
+      const seenIds = new Set<string>();
+      const dedupedIssues = rawIssues.filter(issue => {
+        if (seenIds.has(issue.id)) return false;
+        seenIds.add(issue.id);
+        return true;
+      });
+      rawIssues.length = 0;
+      rawIssues.push(...dedupedIssues);
+
       // ── Step 2: Enrich ALL issues with ONE Gemini call ────────────────────
       let aiSuggestions: Record<string, string> = {};
       if (rawIssues.length > 0) {
@@ -551,9 +562,10 @@ Kembalikan HANYA JSON array.`;
         }
       }
 
-      // Filter out recommendations that were already applied
+      // Filter applied and deduplicate by id before saving to state
       const filteredRecs = recs.filter(r => !appliedIds.has(r.id));
-      setRecommendations(filteredRecs);
+      const uniqueRecs = [...new Map(filteredRecs.map(r => [r.id, r])).values()];
+      setRecommendations(uniqueRecs);
       setLastGeneratedAt(new Date().toLocaleTimeString('id-ID'));
       setHasGenerated(true);
     } catch (err) {
@@ -734,7 +746,7 @@ Kembalikan HANYA JSON array.`;
             <span className="text-xs font-bold text-amber-800">Zone Mismatch Warnings</span>
           </div>
           <div className="space-y-1.5">
-            {recommendations.filter(r => r.type === 'mismatch').map(rec => (
+            {[...new Map(recommendations.filter(r => r.type === 'mismatch').map(r => [r.id, r])).values()].map(rec => (
               <div key={rec.id} className="flex items-center justify-between gap-2 text-[10px] font-semibold text-amber-700 bg-white/60 rounded-lg px-2.5 py-1.5">
                 <span className="flex-1">{rec.suggestion}</span>
                 <button
@@ -753,7 +765,7 @@ Kembalikan HANYA JSON array.`;
       {/* Recommendation Cards */}
       {!isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {recommendations.filter(r => r.type !== 'mismatch').map(rec => {
+          {[...new Map(recommendations.filter(r => r.type !== 'mismatch').map(r => [r.id, r])).values()].map(rec => {
             const styles = getPriorityStyles(rec.priority);
             return (
               <div key={rec.id} className="flex gap-3 p-3 bg-white rounded-xl border border-stone-100 hover:border-[#2C742F]/20 transition-all relative overflow-hidden group">

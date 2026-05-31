@@ -185,14 +185,15 @@ router.post('/analyze', requireAuth, validate(analyzeValidation), async (req, re
     //    Fruit tab → rotten fruit detector model
     let predictions = [];
     try {
-      const PLANT_MODEL_URL = `https://serverless.roboflow.com/plants-diseases-detection-and-classification/12?api_key=${process.env.ROBOFLOW_API_KEY}`;
-      const FRUIT_MODEL_URL = `https://serverless.roboflow.com/rotten-fruit-detector/3?api_key=${process.env.ROBOFLOW_API_KEY}`;
+      const PLANT_MODEL_URL = 'https://serverless.roboflow.com/plants-diseases-detection-and-classification/12';
+      const FRUIT_MODEL_URL = 'https://serverless.roboflow.com/rotten-fruit-detector/3';
 
       const modelUrl = materialType === 'plant' ? PLANT_MODEL_URL : FRUIT_MODEL_URL;
 
       const response = await axios({
         method: 'POST',
         url: modelUrl,
+        params: { api_key: process.env.ROBOFLOW_API_KEY },
         data: base64Data,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
