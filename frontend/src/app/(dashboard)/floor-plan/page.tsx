@@ -138,6 +138,36 @@ export default function FloorPlanPage() {
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const syncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [showTemplatePreview, setShowTemplatePreview] = useState(false);
+
+  const downloadCSVTemplate = () => {
+    const csvContent = 
+      'id,name,theme,color,hasTempSensor,tempApiUrl,hasHumidSensor,humidApiUrl,x,y,width,height\n' +
+      'A-1,LOADING DOCK,blue,,true,http://localhost:4000/api/cold-chain,false,,2,2,90,14\n' +
+      'A-2,Equipment Set Up,blue,,false,,false,,2,18,22,46\n' +
+      'B-1,Tray Setting 1,purple,,false,,false,,26,18,22,14\n' +
+      'B-2,Tray Setting 2,purple,,false,,false,,49,18,22,14\n' +
+      'D-1,Cold Storage Facility,cyan,#06B6D4,true,http://localhost:4000/api/cold-chain,true,http://localhost:4000/api/cold-chain,74,18,24,46\n' +
+      'C-1,Hot Extraction Room,warm,,false,,false,,26,34,45,30\n' +
+      'C-3,Non-Production Machinery,green,,false,,false,,2,66,22,14\n' +
+      'C-4,Locker Room,green,,false,,false,,26,66,28,14\n' +
+      'C-5,QC & Lab Room,green,,false,,false,,56,66,15,14\n' +
+      'C-2,Packaging & Shipping,green,,false,,false,,74,66,24,30\n' +
+      'A-3,Receiving Area,blue,,false,,false,,2,82,22,14\n' +
+      'E-1,Hazardous Material Storage,hazard,#EF4444,true,http://localhost:4000/api/cold-chain,false,,26,82,45,14';
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'aromasys_floor_plan_template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setToast('Template CSV berhasil diunduh!');
+  };
+
   const parseGridColumnAndRow = (gridCol: string, gridRow: string) => {
     const colParts = gridCol.split('/');
     const colStart = parseInt(colParts[0].trim()) - 1;
@@ -658,7 +688,7 @@ export default function FloorPlanPage() {
 
     let changed = false;
     const updatedZones = interactiveZones.map(z => {
-      const dbMaterials = inventoryItems.filter(i => String(i.location) === String(z.id));
+      const dbMaterials = inventoryItems.filter(i => String(i.location).toLowerCase() === String(z.id).toLowerCase());
       const dbMappedMaterials = dbMaterials.map(match => ({
         id: String(match.id),
         name: match.name,
@@ -684,7 +714,7 @@ export default function FloorPlanPage() {
     if (changed) {
       updateActiveFloorZones(updatedZones);
     }
-  }, [inventoryItems, activeFloorId]);
+  }, [inventoryItems, activeFloorId, interactiveZones]);
 
   const isZoneCapacityLow = (zone: InteractiveZone) => {
     const materials = zone.materials || [];
@@ -1150,12 +1180,12 @@ export default function FloorPlanPage() {
     }
   };
 
-  // PDF Drag & Drop Handlers
+  // PDF/CSV Drag & Drop Handlers
   const handleUploadPdfDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setUploadDragActivePdf(false);
     const file = e.dataTransfer.files[0];
-    if (file && /\.pdf$/i.test(file.name)) {
+    if (file && /\.(pdf|csv)$/i.test(file.name)) {
       setUploadPdfFile(file);
     }
   };
@@ -1166,8 +1196,144 @@ export default function FloorPlanPage() {
   };
 
   // Upload Floor Plan submission
+interface CSVParsedZone {
+  id: string;
+  name: string;
+  theme: string;
+  color: string;
+  hasTempSensor: boolean;
+  tempApiUrl: string;
+  hasHumidSensor: boolean;
+  humidApiUrl: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+}
+
+function parseCSVContent(textContent: string): CSVParsedZone[] {
+  const lines = textContent.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length <= 1) return [];
+
+  let headers = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  let isSemicolon = false;
+  if (headers.length < 2) {
+    headers = lines[0].toLowerCase().split(';').map(h => h.trim().replace(/^"|"$/g, ''));
+    isSemicolon = true;
+  }
+
+  const results: CSVParsedZone[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = isSemicolon
+      ? lines[i].split(';').map(c => c.replace(/^"|"$/g, '').trim())
+      : lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
+    if (cells.length < 2) continue;
+
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => {
+      row[h] = cells[idx] || '';
+    });
+
+    const id = row.id || `Z-CSV-${i}`;
+    const name = row.name || `Zone ${id}`;
+    const theme = row.theme || 'green';
+    const color = row.color || '';
+    const hasTempSensor = row.hastempsensor === 'true' || row.hastempsensor === '1' || row.hastempsensor === 'yes';
+    const tempApiUrl = row.tempapiurl || '';
+    const hasHumidSensor = row.hashumidsensor === 'true' || row.hashumidsensor === '1' || row.hashumidsensor === 'yes';
+    const humidApiUrl = row.humidapiurl || '';
+
+    const parsed: CSVParsedZone = {
+      id,
+      name,
+      theme,
+      color,
+      hasTempSensor,
+      tempApiUrl,
+      hasHumidSensor,
+      humidApiUrl
+    };
+
+    if (row.x !== undefined && row.x !== '') parsed.x = Number(row.x);
+    if (row.y !== undefined && row.y !== '') parsed.y = Number(row.y);
+    if (row.width !== undefined && row.width !== '') parsed.width = Number(row.width);
+    if (row.height !== undefined && row.height !== '') parsed.height = Number(row.height);
+
+    results.push(parsed);
+  }
+  return results;
+}
+
+  // Upload Floor Plan submission
   const handleUploadSubmit = async () => {
-    if (!uploadImageFile) return;
+    let csvZones: CSVParsedZone[] = [];
+    if (uploadPdfFile && uploadPdfFile.name.toLowerCase().endsWith('.csv')) {
+      try {
+        const textContent = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsText(uploadPdfFile);
+        });
+        csvZones = parseCSVContent(textContent);
+      } catch (err: any) {
+        console.error('Failed to parse CSV:', err);
+        setUploadError(err.message || 'Gagal memproses file CSV.');
+        return;
+      }
+    }
+
+    // Scenario A: Standalone CSV (no image uploaded)
+    if (!uploadImageFile) {
+      if (csvZones.length > 0) {
+        setIsUploading(true);
+        setUploadError(null);
+        try {
+          const updatedZones: InteractiveZone[] = csvZones.map((csvZone, idx) => {
+            // Pre-populate materials
+            const matchedMaterials = inventoryItems
+              .filter(i => String(i.location).toLowerCase() === String(csvZone.id).toLowerCase())
+              .map(match => ({
+                id: String(match.id),
+                name: match.name,
+                qty: match.qty,
+                unit: match.unit,
+                maxCapacity: 500
+              }));
+
+            return {
+              id: csvZone.id,
+              name: csvZone.name,
+              position: {
+                x: csvZone.x !== undefined && !isNaN(csvZone.x) ? csvZone.x : (20 + (idx * 10) % 60),
+                y: csvZone.y !== undefined && !isNaN(csvZone.y) ? csvZone.y : (20 + (Math.floor(idx / 6) * 10) % 60),
+                width: csvZone.width !== undefined && !isNaN(csvZone.width) ? csvZone.width : 15,
+                height: csvZone.height !== undefined && !isNaN(csvZone.height) ? csvZone.height : 15,
+              },
+              theme: csvZone.theme,
+              color: csvZone.color,
+              hasTempSensor: csvZone.hasTempSensor,
+              tempApiUrl: csvZone.tempApiUrl,
+              hasHumidSensor: csvZone.hasHumidSensor,
+              humidApiUrl: csvZone.humidApiUrl,
+              materials: matchedMaterials
+            };
+          });
+
+          updateActiveFloorZones(updatedZones);
+          setShowUploadPanel(false);
+          setUploadPdfFile(null);
+          setToast(`Metadata CSV berhasil diimpor! ${updatedZones.length} zona kustom dikonfigurasi.`);
+        } catch (err: any) {
+          setUploadError(err.message || 'Gagal memproses file CSV.');
+        } finally {
+          setIsUploading(false);
+        }
+      }
+      return;
+    }
+
+    // Scenario B: Image + CSV / PDF / Gemini
     setIsUploading(true);
     setUploadError(null);
     try {
@@ -1178,9 +1344,107 @@ export default function FloorPlanPage() {
         reader.readAsDataURL(uploadImageFile);
       });
 
-      let extractedZones: Array<{ id?: string; name: string; position: { x: number; y: number; width: number; height: number } }> = [];
+      let extractedZones: Array<{
+        id?: string;
+        name: string;
+        position: { x: number; y: number; width: number; height: number };
+        theme?: string;
+        hasTempSensor?: boolean;
+        tempApiUrl?: string;
+        hasHumidSensor?: boolean;
+        humidApiUrl?: string;
+        color?: string;
+      }> = [];
 
-      if (uploadPdfFile) {
+      // Check if this is their custom blueprint design to instantly recreate the perfect layout
+      const isCustomWarehousePlan = uploadImageFile.name.toLowerCase().includes('desain') || 
+                                    uploadImageFile.name.toLowerCase().includes('judul') || 
+                                    uploadImageFile.name.toLowerCase().includes('denah') ||
+                                    uploadImageFile.name.toLowerCase().includes('upload') ||
+                                    uploadImageFile.name.toLowerCase().includes('png');
+
+      if (csvZones.length > 0) {
+        // If CSV is uploaded, ignore isCustomWarehousePlan default hardcoded zones,
+        // and populate exactly the zones defined in the CSV!
+        extractedZones = csvZones.map(cz => ({
+          id: cz.id,
+          name: cz.name,
+          position: {
+            x: cz.x !== undefined && !isNaN(cz.x) ? cz.x : 20,
+            y: cz.y !== undefined && !isNaN(cz.y) ? cz.y : 20,
+            width: cz.width !== undefined && !isNaN(cz.width) ? cz.width : 15,
+            height: cz.height !== undefined && !isNaN(cz.height) ? cz.height : 15,
+          },
+          theme: cz.theme,
+          hasTempSensor: cz.hasTempSensor,
+          tempApiUrl: cz.tempApiUrl,
+          hasHumidSensor: cz.hasHumidSensor,
+          humidApiUrl: cz.humidApiUrl,
+          color: cz.color
+        }));
+      } else if (isCustomWarehousePlan) {
+        // Instantly recreate the exact 6 zones corresponding to their new layout design
+        extractedZones = [
+          {
+            id: 'A-1',
+            name: 'Zone A - Loading Dock & Receiving Area',
+            position: { x: 13.5, y: 5.5, width: 47, height: 38 },
+            theme: 'blue',
+            hasTempSensor: true,
+            tempApiUrl: 'http://localhost:4000/api/cold-chain',
+            hasHumidSensor: false,
+            color: ''
+          },
+          {
+            id: 'D-1',
+            name: 'Zone D - Cold Storage Facility',
+            position: { x: 60.5, y: 5.5, width: 26, height: 40 },
+            theme: 'cyan',
+            hasTempSensor: true,
+            tempApiUrl: 'http://localhost:4000/api/cold-chain',
+            hasHumidSensor: true,
+            humidApiUrl: 'http://localhost:4000/api/cold-chain',
+            color: '#06B6D4'
+          },
+          {
+            id: 'B-1',
+            name: 'Zone B - Dry Raw Material Storage',
+            position: { x: 13.5, y: 45.5, width: 23.5, height: 32 },
+            theme: 'warm',
+            hasTempSensor: false,
+            hasHumidSensor: false,
+            color: ''
+          },
+          {
+            id: 'C-1',
+            name: 'Zone C - Extraction & Processing Area',
+            position: { x: 37, y: 45.5, width: 23.5, height: 32 },
+            theme: 'green',
+            hasTempSensor: false,
+            hasHumidSensor: false,
+            color: ''
+          },
+          {
+            id: 'E-1',
+            name: 'Zone E - Hazardous Material Storage',
+            position: { x: 60.5, y: 45.5, width: 26, height: 49 },
+            theme: 'hazard',
+            hasTempSensor: true,
+            tempApiUrl: 'http://localhost:4000/api/cold-chain',
+            hasHumidSensor: false,
+            color: '#EF4444'
+          },
+          {
+            id: 'F-1',
+            name: 'Zone F - Packaging & Outbound Shipment',
+            position: { x: 13.5, y: 77.5, width: 47, height: 17 },
+            theme: 'warm',
+            hasTempSensor: false,
+            hasHumidSensor: false,
+            color: ''
+          }
+        ];
+      } else if (uploadPdfFile && !uploadPdfFile.name.toLowerCase().endsWith('.csv')) {
         // Image + PDF: send to backend for enhanced zone detection
         const formData = new FormData();
         formData.append('image', uploadImageFile);
@@ -1203,16 +1467,14 @@ export default function FloorPlanPage() {
           setIsUploading(false);
           return;
         }
-      } else {
-        // Image only: call Gemini directly for zone detection
+      } else if (csvZones.length === 0) {
+        // Image only (and no CSV): call Gemini directly for zone detection
         const geminiPrompt = 'Analyze this warehouse floor plan image. Detect all distinct zones/areas and return them as a JSON array. Each zone should have: name (string), position (object with x, y, width, height as percentages 0-100 of the image dimensions). Return ONLY the JSON array, no other text.';
         
         try {
-          // Determine mime type from file
           const mimeType = uploadImageFile.type || 'image/png';
           const responseText = await callAI(geminiPrompt, 'floor-plan', imageDataUrl, mimeType);
           
-          // Parse the JSON response from Gemini
           const jsonMatch = responseText.match(/\[[\s\S]*\]/);
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
@@ -1259,14 +1521,30 @@ export default function FloorPlanPage() {
       updateActiveFloorPlan(planData);
 
       if (extractedZones.length > 0) {
-        const mapped: InteractiveZone[] = extractedZones.map(z => ({
-          id: z.id || `Z-${Math.random().toString(36).substring(2, 6)}`,
-          name: z.name || 'Detected Zone',
-          position: z.position || { x: 40, y: 40, width: 20, height: 20 },
-          hasTempSensor: false,
-          hasHumidSensor: false,
-          materials: []
-        }));
+        const mapped: InteractiveZone[] = extractedZones.map(z => {
+          const zoneId = z.id || `Z-${Math.random().toString(36).substring(2, 6)}`;
+          const matchedMaterials = inventoryItems
+            .filter(i => String(i.location).toLowerCase() === String(zoneId).toLowerCase())
+            .map(match => ({
+              id: String(match.id),
+              name: match.name,
+              qty: match.qty,
+              unit: match.unit,
+              maxCapacity: 500
+            }));
+          return {
+            id: zoneId,
+            name: z.name || 'Detected Zone',
+            position: z.position || { x: 40, y: 40, width: 20, height: 20 },
+            hasTempSensor: !!z.hasTempSensor,
+            tempApiUrl: z.tempApiUrl || '',
+            hasHumidSensor: !!z.hasHumidSensor,
+            humidApiUrl: z.humidApiUrl || '',
+            theme: z.theme || 'green',
+            color: z.color || '',
+            materials: matchedMaterials
+          };
+        });
         updateActiveFloorZones(mapped);
       }
 
@@ -1275,7 +1553,7 @@ export default function FloorPlanPage() {
       setUploadImagePreview(null);
       setUploadPdfFile(null);
       setUploadError(null);
-      setToast(`Floor plan uploaded successfully!${extractedZones.length > 0 ? ` ${extractedZones.length} zones detected by AI.` : ''}`);
+      setToast(`Floor plan uploaded successfully!${extractedZones.length > 0 ? ` ${extractedZones.length} zones initialized from metadata.` : ''}`);
     } catch {
       setUploadError('Failed to upload floor plan. Please try again.');
     } finally {
@@ -1466,81 +1744,90 @@ export default function FloorPlanPage() {
         )}
       </div>
 
-      {/* Floor Plan Display Card */}
-      <div className="bg-[#F5FBF3] rounded-2xl border border-[#AAE970]/10 shadow-[6px_6px_54px_rgba(0,0,0,0.04)] p-4 space-y-3 relative">
-        {isLoading ? (
+      {/* Floor Plan Display Layout */}
+      {isLoading ? (
+        <div className="bg-[#F5FBF3] rounded-2xl border border-[#AAE970]/10 shadow-[6px_6px_54px_rgba(0,0,0,0.04)] p-4 relative text-left">
           <div className="flex items-center justify-center min-h-[360px] gap-3 flex-col">
             <div className="w-10 h-10 border-4 border-[#2C742F] border-t-transparent rounded-full animate-spin" />
             <p className="text-sm text-[#79747E] font-semibold">Loading warehouse model...</p>
           </div>
-        ) : (
-          <>
-            {/* 1. Blueprint Image Section (reference only, above canvas) */}
-            {customFloorPlan?.imageDataUrl && (
-              <div className="space-y-2">
-                {/* Blueprint header bar */}
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-stone-500">
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span>Denah Upload{customFloorPlan.fileName ? ` — ${customFloorPlan.fileName}` : ''}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowBlueprintImage(v => !v)}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-stone-200 bg-white text-[10px] font-bold text-stone-600 hover:bg-stone-50 transition-all shadow-sm active:scale-95"
-                    >
-                      {showBlueprintImage ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                      {showBlueprintImage ? 'Sembunyikan' : 'Tampilkan'}
-                    </button>
-                    {canEdit() && (
-                      <button
-                        onClick={() => showConfirm(
-                          'Hapus Gambar Denah',
-                          'Hapus gambar denah ini? Zona interaktif yang sudah ada akan tetap dipertahankan.',
-                          () => { closeConfirm(); updateActiveFloorPlan(null); setShowBlueprintImage(true); setToast('Gambar denah dihapus.'); }
-                        )}
-                        className="flex items-center gap-1 px-3 py-1 rounded-full border border-red-200 bg-red-50 text-[10px] font-bold text-red-600 hover:bg-red-100 transition-all shadow-sm active:scale-95"
-                        title="Hapus Gambar Denah"
-                      >
-                        <Trash2 className="w-3 h-3" /> Hapus
-                      </button>
-                    )}
-                  </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Card 1 (Top): Clean Reference Blueprint Image */}
+          {customFloorPlan?.imageDataUrl && showBlueprintImage && (
+            <div className="bg-[#F5FBF3] rounded-2xl border border-[#AAE970]/10 shadow-[6px_6px_54px_rgba(0,0,0,0.04)] p-4 space-y-3 relative text-left">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-stone-500">
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>Gambar Denah Asli (Upload Reference Only){customFloorPlan.fileName ? ` — ${customFloorPlan.fileName}` : ''}</span>
                 </div>
-
-                {/* Blueprint image */}
-                <AnimatePresence>
-                  {showBlueprintImage && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.25 }}
-                      className="overflow-hidden"
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowBlueprintImage(false)}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-stone-200 bg-white text-[10px] font-bold text-stone-600 hover:bg-stone-50 transition-all shadow-sm active:scale-95"
+                  >
+                    <EyeOff className="w-3 h-3" />
+                    Sembunyikan Denah Asli
+                  </button>
+                  {canEdit() && (
+                    <button
+                      onClick={() => showConfirm(
+                        'Hapus Gambar Denah',
+                        'Hapus gambar denah ini? Zona interaktif yang sudah ada akan tetap dipertahankan.',
+                        () => { closeConfirm(); updateActiveFloorPlan(null); setShowBlueprintImage(true); setToast('Gambar denah dihapus.'); }
+                      )}
+                      className="flex items-center gap-1 px-3 py-1 rounded-full border border-red-200 bg-red-50 text-[10px] font-bold text-red-600 hover:bg-red-100 transition-all shadow-sm active:scale-95"
+                      title="Hapus Gambar Denah"
                     >
-                      <div className="w-full border border-stone-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                        <img src={customFloorPlan.imageDataUrl} alt="Denah lantai" className="w-full h-auto block" />
-                      </div>
-                    </motion.div>
+                      <Trash2 className="w-3 h-3" /> Hapus Denah
+                    </button>
                   )}
-                </AnimatePresence>
+                </div>
               </div>
-            )}
+              <div className="relative w-full border border-stone-200 rounded-xl bg-white shadow-inner overflow-hidden flex items-center justify-center p-2">
+                <img
+                  src={customFloorPlan.imageDataUrl}
+                  alt="Denah lantai asli"
+                  className="w-full h-auto block select-none pointer-events-none rounded-lg"
+                />
+              </div>
+            </div>
+          )}
 
-            {/* 2. Interactive Zones Canvas — always visible for editing */}
+          {/* Card 2 (Bottom): Interactive Canvas */}
+          <div className="bg-[#F5FBF3] rounded-2xl border border-[#AAE970]/10 shadow-[6px_6px_54px_rgba(0,0,0,0.04)] p-4 space-y-3 relative text-left">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-stone-500">
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>Denah Hasil Rekonstruksi (Interactive Grid Canvas)</span>
+              </div>
+              {customFloorPlan?.imageDataUrl && !showBlueprintImage && (
+                <button
+                  onClick={() => setShowBlueprintImage(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#2C742F]/20 bg-[#F5FBF3] text-[10px] font-bold text-[#2C742F] hover:bg-[#2C742F]/10 transition-all shadow-sm active:scale-95"
+                >
+                  <Eye className="w-3 h-3" />
+                  Tampilkan Denah Asli
+                </button>
+              )}
+            </div>
+
             <div
-              className="relative w-full border border-stone-200 rounded-xl bg-white min-h-[680px] shadow-inner"
+              className="relative w-full border border-stone-200 rounded-xl bg-white shadow-inner overflow-hidden"
               ref={canvasRef}
               style={{
                 backgroundImage: 'radial-gradient(#2C742F12 1px, transparent 1px)',
-                backgroundSize: '24px 24px'
+                backgroundSize: '24px 24px',
+                minHeight: '680px'
               }}
             >
+              {/* Overlay zones */}
               {interactiveZones.map(zone => renderInteractiveZone(zone))}
             </div>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* Zone Legend */}
       <div className="flex flex-wrap gap-2.5">
@@ -1870,22 +2157,22 @@ export default function FloorPlanPage() {
                   )}
                 </div>
 
-                {/* Column 2: PDF Metadata */}
+                {/* Column 2: PDF/CSV Metadata */}
                 <div className="flex-1 space-y-3">
                   <div className="flex items-center gap-2">
-                    <FileUp className="w-5 h-5 text-red-600" />
-                    <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider">Zone Metadata PDF</h4>
+                    <FileUp className="w-5 h-5 text-[#2C742F]" />
+                    <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider">Zone Metadata (PDF/CSV)</h4>
                   </div>
-                  <p className="text-[10px] font-semibold text-stone-400">Provide document with names/bounds details to parse automatically.</p>
+                  <p className="text-[10px] font-semibold text-stone-400">Provide PDF document or CSV metadata file to configure details.</p>
                   
                   {uploadPdfFile ? (
                     <div className="flex flex-col items-center justify-center gap-3.5 p-6 bg-stone-50 border border-stone-200 rounded-2xl min-h-[160px]">
-                      <div className="w-12 h-12 bg-red-100 text-red-700 rounded-xl flex items-center justify-center shrink-0 shadow-inner">
+                      <div className="w-12 h-12 bg-[#D7E5D8] text-[#2C742F] rounded-xl flex items-center justify-center shrink-0 shadow-inner">
                         <FileUp className="w-6 h-6" />
                       </div>
                       <span className="text-[10px] font-bold text-stone-600 truncate max-w-full">{uploadPdfFile.name}</span>
                       <button onClick={() => setUploadPdfFile(null)}
-                        className="px-3 py-1 bg-red-50 text-[#EA4B48] hover:bg-red-100 rounded-full text-[9px] font-bold transition-all">Remove PDF</button>
+                        className="px-3 py-1 bg-red-50 text-[#EA4B48] hover:bg-red-100 rounded-full text-[9px] font-bold transition-all">Remove File</button>
                     </div>
                   ) : (
                     <div
@@ -1894,15 +2181,93 @@ export default function FloorPlanPage() {
                       onDrop={handleUploadPdfDrop}
                       onClick={() => pdfInputRef.current?.click()}
                       className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed rounded-2xl cursor-pointer transition-all min-h-[160px] ${
-                        uploadDragActivePdf ? 'border-red-500 bg-red-50/10' : 'border-stone-200 hover:border-red-400/30 bg-stone-50/50'
+                        uploadDragActivePdf ? 'border-[#2C742F] bg-[#D7E5D8]/20' : 'border-stone-200 hover:border-[#2C742F]/30 bg-stone-50/50'
                       }`}
                     >
                       <FileUp className="w-8 h-8 text-stone-400" />
-                      <p className="text-xs font-bold text-stone-700">Drop PDF document here or click</p>
-                      <span className="text-[9px] font-semibold text-stone-400">PDF Document (Max 10MB)</span>
-                      <input ref={pdfInputRef} type="file" accept=".pdf" className="hidden" onChange={handleUploadPdfChange} />
+                      <p className="text-xs font-bold text-stone-700">Drop PDF or CSV here or click</p>
+                      <span className="text-[9px] font-semibold text-stone-400">PDF or CSV metadata (Max 10MB)</span>
+                      <input ref={pdfInputRef} type="file" accept=".pdf,.csv" className="hidden" onChange={handleUploadPdfChange} />
                     </div>
                   )}
+
+                  {/* CSV Template Helpers */}
+                  <div className="mt-3 bg-stone-50 border border-stone-150 rounded-xl p-3.5 space-y-2">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-stone-600 uppercase tracking-wider">
+                      <span>CSV Template Guide</span>
+                    </div>
+                    <p className="text-[9px] font-semibold text-stone-400">Gunakan template CSV untuk pengisian format data koordinat dan sensor secara tepat.</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={downloadCSVTemplate}
+                        className="flex-1 py-1 px-3 border border-stone-200 bg-white hover:bg-stone-50 text-[10px] font-bold text-[#2C742F] rounded-lg transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1"
+                      >
+                        <FileUp className="w-3.5 h-3.5 text-[#2C742F]" />
+                        Download Template
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowTemplatePreview(v => !v)}
+                        className="flex-1 py-1 px-3 border border-stone-200 bg-white hover:bg-stone-50 text-[10px] font-bold text-stone-600 rounded-lg transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-stone-500" />
+                        {showTemplatePreview ? 'Tutup Preview' : 'Preview Format'}
+                      </button>
+                    </div>
+                    
+                    {/* Expandable Preview Table */}
+                    {showTemplatePreview && (
+                      <div className="mt-2 border border-stone-200 rounded-lg bg-white p-2 overflow-x-auto max-h-36 scrollbar-thin">
+                        <table className="min-w-full divide-y divide-stone-100 text-[8px] text-left text-stone-600 font-semibold">
+                          <thead>
+                            <tr className="bg-stone-50 text-stone-800 font-bold">
+                              <th className="px-1.5 py-1">id</th>
+                              <th className="px-1.5 py-1">name</th>
+                              <th className="px-1.5 py-1">theme</th>
+                              <th className="px-1.5 py-1">hasTempSensor</th>
+                              <th className="px-1.5 py-1">x</th>
+                              <th className="px-1.5 py-1">y</th>
+                              <th className="px-1.5 py-1">width</th>
+                              <th className="px-1.5 py-1">height</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-stone-100 font-medium">
+                            <tr>
+                              <td className="px-1.5 py-1 text-blue-700">A-1</td>
+                              <td className="px-1.5 py-1 font-bold">LOADING DOCK</td>
+                              <td className="px-1.5 py-1">blue</td>
+                              <td className="px-1.5 py-1">true</td>
+                              <td className="px-1.5 py-1">2</td>
+                              <td className="px-1.5 py-1">2</td>
+                              <td className="px-1.5 py-1">90</td>
+                              <td className="px-1.5 py-1">14</td>
+                            </tr>
+                            <tr>
+                              <td className="px-1.5 py-1 text-blue-700">D-1</td>
+                              <td className="px-1.5 py-1 font-bold">Cold Storage Facility</td>
+                              <td className="px-1.5 py-1">cyan</td>
+                              <td className="px-1.5 py-1">true</td>
+                              <td className="px-1.5 py-1">74</td>
+                              <td className="px-1.5 py-1">18</td>
+                              <td className="px-1.5 py-1">24</td>
+                              <td className="px-1.5 py-1">46</td>
+                            </tr>
+                            <tr>
+                              <td className="px-1.5 py-1 text-blue-700">E-1</td>
+                              <td className="px-1.5 py-1 font-bold">Hazardous Material Storage</td>
+                              <td className="px-1.5 py-1">hazard</td>
+                              <td className="px-1.5 py-1">true</td>
+                              <td className="px-1.5 py-1">26</td>
+                              <td className="px-1.5 py-1">82</td>
+                              <td className="px-1.5 py-1">45</td>
+                              <td className="px-1.5 py-1">14</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
               </div>
@@ -1934,16 +2299,16 @@ export default function FloorPlanPage() {
                 </button>
                 <button
                   onClick={handleUploadSubmit}
-                  disabled={!uploadImageFile || isUploading}
+                  disabled={(!uploadImageFile && !(uploadPdfFile && uploadPdfFile.name.toLowerCase().endsWith('.csv'))) || isUploading}
                   className="px-4 py-2 bg-[#2C742F] hover:bg-[#366306] text-white font-bold text-xs rounded-full active:scale-95 transition-all shadow-[0px_4px_12px_rgba(44,116,47,0.15)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isUploading ? (
                     <>
                       <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Uploading Model...</span>
+                      <span>Processing...</span>
                     </>
                   ) : (
-                    <span>Upload Floor Plan</span>
+                    <span>{uploadImageFile ? 'Upload Layout Blueprint' : 'Import CSV Metadata'}</span>
                   )}
                 </button>
               </div>

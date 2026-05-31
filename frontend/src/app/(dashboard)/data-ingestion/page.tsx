@@ -38,7 +38,6 @@ interface FileQueueItem {
 export default function DataIngestionPage() {
   const { user } = useAuth();
   const { t } = useLanguage();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const modalFileInputRef = useRef<HTMLInputElement>(null);
 
   // Main state
@@ -51,7 +50,13 @@ export default function DataIngestionPage() {
   // Modal & queue state
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [fileQueue, setFileQueue] = useState<FileQueueItem[]>([]);
+  const fileQueueRef = useRef<FileQueueItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
+
+  // Sync ref with fileQueue state to avoid stale closures
+  useEffect(() => {
+    fileQueueRef.current = fileQueue;
+  }, [fileQueue]);
   const [processedFileNames, setProcessedFileNames] = useState<string[]>([]);
 
   // Row editing
@@ -98,12 +103,12 @@ export default function DataIngestionPage() {
     if (inventoryFetchedRef.current) return; // already fetched for this batch
     inventoryFetchedRef.current = true;
 
-    api.get<{ success: boolean; items: Array<{ name: string; lotNumber?: string }> }>('/inventory')
+    api.get<{ success: boolean; items: Array<{ name: string; id?: string; lotNumber?: string }> }>('/inventory')
       .then(data => {
         if (data.success && Array.isArray(data.items)) {
           setExistingInventory(data.items.map(item => ({
             name: item.name,
-            lotNumber: item.lotNumber || '',
+            lotNumber: item.id || item.lotNumber || '',
           })));
         }
       })
@@ -113,13 +118,64 @@ export default function DataIngestionPage() {
   // Processing state
   const processingRef = useRef(false);
 
+  // --- Structured Data CSV Processing ---
+  const parseCsvDirectly = (csvText: string): OcrItem[] => {
+    const lines = csvText.split('\n').filter(l => l.trim());
+    if (lines.length < 2) return [];
+
+    // Remove BOM if present
+    const header = lines[0].replace(/^\uFEFF/, '').toLowerCase();
+    const results: OcrItem[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      let cells = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
+      if (cells.length < 3) {
+        cells = lines[i].split(';').map(c => c.replace(/^"|"$/g, '').trim());
+      }
+      if (cells.length < 3) continue;
+
+      // Try to extract meaningful data from CSV columns
+      const name = cells[1] || cells[0] || '';
+      const category = cells[2] || 'Kimia';
+      const qtyStr = cells[3] || '0';
+      const qty = parseFloat(qtyStr.replace(/[^\d.]/g, '')) || 0;
+      const unit = (cells[3] || '').replace(/[\d.]/g, '').trim() || 'kg';
+      const expiry = cells[6] || cells[5] || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const lotNumber = cells[0] || `LOT-${i}`;
+
+      if (name && name !== 'Nama Bahan' && name !== 'name' && name !== 'Nama') {
+        results.push({
+          name,
+          category: ['Tepung', 'Gula', 'Minyak', 'Pewarna', 'Essence', 'Pengawet', 'Susu', 'Cokelat', 'Rempah', 'Kimia'].includes(category) ? category : 'Kimia',
+          qty: qty || 1,
+          unit: ['kg', 'L', 'liter', 'pcs', 'box', 'karung', 'drum'].includes(unit) ? unit : 'kg',
+          expiry,
+          confidence: 0.90, // high confidence for structured data
+          lotNumber
+        });
+      }
+    }
+    return results;
+  };
+
   // --- OCR Processing - Single File (Fallback) ---
   const processOneFile = async (file: File): Promise<OcrItem[]> => {
     const isImage = file.type.startsWith('image/');
     const isPdf = file.type === 'application/pdf';
+    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
 
-    if (!isImage && !isPdf) {
-      throw new Error('Unsupported file format. Please upload JPG, PNG, or PDF files.');
+    if (!isImage && !isPdf && !isCsv) {
+      throw new Error('Unsupported file format. Please upload JPG, PNG, PDF, or CSV files.');
+    }
+
+    if (isCsv) {
+      const textContent = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+      return parseCsvDirectly(textContent);
     }
 
     const base64Data = await new Promise<string>((resolve, reject) => {
@@ -161,13 +217,38 @@ export default function DataIngestionPage() {
     const results = new Map<string, OcrItem[]>();
     
     if (files.length === 0) return results;
-    if (files.length === 1) {
-      // Single file - use original processOneFile
+
+    // Filter out CSV files to process them locally
+    const csvFiles = files.filter(f => f.name.toLowerCase().endsWith('.csv') || f.file.type === 'text/csv');
+    const nonCsvFiles = files.filter(f => !f.name.toLowerCase().endsWith('.csv') && f.file.type !== 'text/csv');
+
+    // Process CSV files locally
+    for (const queueItem of csvFiles) {
       try {
-        const items = await processOneFile(files[0].file);
-        results.set(files[0].id, items);
+        const textContent = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsText(queueItem.file);
+        });
+        const items = parseCsvDirectly(textContent);
+        results.set(queueItem.id, items);
       } catch (err) {
-        results.set(files[0].id, []);
+        results.set(queueItem.id, []);
+      }
+    }
+
+    if (nonCsvFiles.length === 0) {
+      return results;
+    }
+
+    if (nonCsvFiles.length === 1) {
+      // Single non-CSV file - use processOneFile
+      try {
+        const items = await processOneFile(nonCsvFiles[0].file);
+        results.set(nonCsvFiles[0].id, items);
+      } catch (err) {
+        results.set(nonCsvFiles[0].id, []);
       }
       return results;
     }
@@ -176,7 +257,7 @@ export default function DataIngestionPage() {
     const fileDataList: Array<{ id: string; name: string; base64: string; mimeType: string }> = [];
     
     try {
-      for (const queueItem of files) {
+      for (const queueItem of nonCsvFiles) {
         const isImage = queueItem.file.type.startsWith('image/');
         const isPdf = queueItem.file.type === 'application/pdf';
 
@@ -207,7 +288,7 @@ export default function DataIngestionPage() {
         ? `\n\nEksisting inventory untuk duplicate detection:\n${existingInventory.slice(0, 10).map(i => `- ${i.name} (LOT: ${i.lotNumber})`).join('\n')}`
         : '';
 
-      const batchPrompt = `Batch OCR Processing - Extract inventory/material data from ${files.length} documents.
+      const batchPrompt = `Batch OCR Processing - Extract inventory/material data from ${nonCsvFiles.length} documents.
 
 For EACH document, return a JSON array of extracted items.
 Return a JSON object with keys being the filename (without path), values being arrays of items.
@@ -268,7 +349,7 @@ Return ONLY valid JSON object in this format:
       }
     } catch (err: unknown) {
       // If batch fails, fallback to individual processing
-      for (const queueItem of files) {
+      for (const queueItem of nonCsvFiles) {
         try {
           const items = await processOneFile(queueItem.file);
           results.set(queueItem.id, items);
@@ -300,31 +381,33 @@ Return ONLY valid JSON object in this format:
 
   // Add files to queue with size validation
   const addFilesToQueue = useCallback((files: FileList | File[]) => {
-    const newItems: FileQueueItem[] = [];
-    const oversized: string[] = [];
+    setFileQueue(prev => {
+      const newItems: FileQueueItem[] = [];
+      const oversized: string[] = [];
 
-    Array.from(files).forEach(f => {
-      if (f.size > MAX_FILE_SIZE) {
-        oversized.push(`${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`);
-        return;
-      }
-      newItems.push({
-        id: `${f.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        file: f,
-        name: f.name,
-        size: f.size,
-        status: 'pending' as const,
-        progress: 0,
-        errorMsg: ''
+      Array.from(files).forEach(f => {
+        if (f.size > MAX_FILE_SIZE) {
+          oversized.push(`${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`);
+          return;
+        }
+
+        newItems.push({
+          id: `${f.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          file: f,
+          name: f.name,
+          size: f.size,
+          status: 'pending' as const,
+          progress: 0,
+          errorMsg: ''
+        });
       });
-    });
 
-    if (oversized.length > 0) {
-      setError(`File berikut melebihi batas 10MB: ${oversized.join(', ')}`);
-    }
-    if (newItems.length > 0) {
-      setFileQueue(prev => [...prev, ...newItems]);
-    }
+      if (oversized.length > 0) {
+        setError(`File berikut melebihi batas 10MB: ${oversized.join(', ')}`);
+      }
+
+      return [...prev, ...newItems];
+    });
   }, []);
 
   // Remove file from queue
@@ -344,20 +427,17 @@ Return ONLY valid JSON object in this format:
     if (processingRef.current) return;
     processingRef.current = true;
 
-    const pending = fileQueue.filter(item => item.status === 'pending');
-    if (pending.length === 0) {
-      processingRef.current = false;
-      return;
-    }
+    // Loop continuously as long as there are pending files in the latest queue to prevent hanging/stuck files
+    while (true) {
+      const pending = fileQueueRef.current.filter(item => item.status === 'pending');
+      if (pending.length === 0) {
+        break;
+      }
 
-    // Split into batches of max 3 files per batch for optimal API response
-    const BATCH_SIZE = 3;
-    const batches: FileQueueItem[][] = [];
-    for (let i = 0; i < pending.length; i += BATCH_SIZE) {
-      batches.push(pending.slice(i, i + BATCH_SIZE));
-    }
+      // Split into batches of max 3 files per batch for optimal API response
+      const BATCH_SIZE = 3;
+      const batch = pending.slice(0, BATCH_SIZE);
 
-    for (const batch of batches) {
       // Mark all files in batch as uploading
       batch.forEach(queueItem => {
         setFileQueue(prev => prev.map(item =>
@@ -382,17 +462,28 @@ Return ONLY valid JSON object in this format:
         clearInterval(progressInterval);
 
         // Process each file's results
-        let totalExtracted = 0;
         for (const queueItem of batch) {
           const resData = batchResults.get(queueItem.id) || [];
 
           if (Array.isArray(resData) && resData.length > 0) {
-            setOcrResult(prev => [...prev, ...resData]);
-            setProcessedFileNames(prev => [...prev, queueItem.name]);
+            setOcrResult(prev => {
+              const combined = [...prev, ...resData];
+              // Deduplicate staging items by name and lotNumber
+              const unique = combined.filter((item, index, self) =>
+                self.findIndex(t => 
+                  t.name.toLowerCase().trim() === item.name.toLowerCase().trim() && 
+                  t.lotNumber.toLowerCase().trim() === item.lotNumber.toLowerCase().trim()
+                ) === index
+              );
+              return unique;
+            });
+            setProcessedFileNames(prev => {
+              const combined = [...prev, queueItem.name];
+              return Array.from(new Set(combined)); // unique file names
+            });
             setFileQueue(prev => prev.map(item =>
               item.id === queueItem.id ? { ...item, status: 'done' as const, progress: 100 } : item
             ));
-            totalExtracted += resData.length;
             setError(null);
           } else {
             setFileQueue(prev => prev.map(item =>
@@ -420,19 +511,17 @@ Return ONLY valid JSON object in this format:
 
     setSaved(false);
     processingRef.current = false;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileQueue, processFileBatch]);
+  }, [processFileBatch]);
 
   // Auto-start processing when there are pending files
-  const hasPending = fileQueue.some(item => item.status === 'pending');
-  const hasUploading = fileQueue.some(item => item.status === 'uploading');
+  useEffect(() => {
+    const hasPending = fileQueue.some(item => item.status === 'pending');
+    const hasUploading = fileQueue.some(item => item.status === 'uploading');
 
-  if (hasPending && !hasUploading && !processingRef.current) {
-    processingRef.current = true;
-    setTimeout(() => {
-      processQueue().finally(() => { processingRef.current = false; });
-    }, 100);
-  }
+    if (hasPending && !hasUploading && !processingRef.current) {
+      processQueue();
+    }
+  }, [fileQueue, processQueue]);
 
   // --- Event Handlers ---
   const handleCloseModal = () => setShowUploadModal(false);
@@ -458,15 +547,6 @@ Return ONLY valid JSON object in this format:
       addFilesToQueue(files);
       setShowUploadModal(true);
     }
-  }
-
-  function handleInlineFileInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      addFilesToQueue(files);
-      setShowUploadModal(true);
-    }
-    e.target.value = '';
   }
 
   // Retry failed extraction
@@ -539,6 +619,11 @@ Return ONLY valid JSON object in this format:
       const failedItems: string[] = [];
 
       for (const item of ocrResult) {
+        // Skip duplicate items to prevent double entry in DB!
+        if (isDuplicate(item, existingInventory)) {
+          continue;
+        }
+
         const zone = getZoneForCategory(item.category);
         const slot = availableSlots.find(s => s.zone === zone && !s.occupied)
           || availableSlots.find(s => !s.occupied);
@@ -601,6 +686,8 @@ Return ONLY valid JSON object in this format:
       setIngestionHistory(prev => [record, ...prev]);
 
       setSaved(true);
+      setFileQueue([]);
+      setProcessedFileNames([]);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError('Failed to save data to database: ' + errorMsg);
@@ -878,6 +965,7 @@ Return ONLY valid JSON object in this format:
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleInlineDrop}
+                onClick={() => setShowUploadModal(true)}
               >
                 <div className={`upload-dropzone-inner ${dragOver ? 'upload-dragover' : ''}`}>
                   <div className="upload-icon-circle">
@@ -886,15 +974,7 @@ Return ONLY valid JSON object in this format:
                   <p className="upload-empty-title">
                     Drop your files here or <span className="upload-link">click to upload</span>
                   </p>
-                  <p className="upload-empty-formats">JPG, PNG, PDF — max 10MB</p>
-                  <input
-                    type="file"
-                    className="upload-file-input"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    multiple
-                    onChange={handleInlineFileInput}
-                    ref={fileInputRef}
-                  />
+                  <p className="upload-empty-formats">JPG, PNG, PDF, CSV — max 10MB</p>
                 </div>
               </div>
             </div>
@@ -980,7 +1060,7 @@ Return ONLY valid JSON object in this format:
             <div className="upload-modal-header">
               <div>
                 <h3 className="upload-modal-header-title">Upload and Attach Files</h3>
-                <span className="upload-modal-header-subtitle">(.jpg / .png / .pdf)</span>
+                <span className="upload-modal-header-subtitle">(.jpg / .png / .pdf / .csv)</span>
               </div>
               <button className="upload-modal-close-btn" onClick={handleCloseModal} aria-label="Close upload modal">
                 <ArrowRight size={20} />
@@ -1002,13 +1082,13 @@ Return ONLY valid JSON object in this format:
                     Drop your files here or click to upload
                   </span>
                   <span className="upload-modal-drop-subtitle">
-                    (.jpg / .png / .pdf)
+                    (.jpg / .png / .pdf / .csv)
                   </span>
                   <input
                     type="file"
                     className="upload-file-input"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    multiple
+                    accept=".pdf,.jpg,.jpeg,.png,.csv"
+                    multiple={true}
                     onChange={handleModalFileInput}
                     ref={modalFileInputRef}
                   />

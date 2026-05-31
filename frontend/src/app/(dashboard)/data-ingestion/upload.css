@@ -476,6 +476,7 @@
   inset: 0;
   opacity: 0;
   cursor: pointer;
+  z-index: 10;
 }
 
 /* Spinner */
