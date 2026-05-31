@@ -61,11 +61,11 @@ AromaSys replaces the spreadsheet workflow with a full-stack digital operations 
 
 | Preview | Module |
 |---|---|
-| ![Dashboard Overview](frontend/public/ld.png) | **Dashboard Overview** — Real-time KPI cards, weekly stock trend chart, zone summary, expiry alerts, and items requiring immediate use |
-| ![Interactive Floor Plan](frontend/public/ld%20(2).png) | **Interactive Floor Plan (Digital Twin)** — Drag-and-resize zone canvas, AI placement recommendations, multi-floor tab support |
-| ![FIFO & Expiry](frontend/public/ld%20(3).png) | **FIFO & Expiry Management** — Color-coded expiry tracking (Expired / Critical / Warning / Safe), sortable table, CSV export |
-| ![Cold-Chain Monitor](frontend/public/ld%20(4).png) | **Cold-Chain Monitor** — Per-zone temperature telemetry, SVG sparkline charts, anomaly detection, maintenance ticket creation |
-| ![AI Production Copilot](frontend/public/ld%20(5).png) | **AI Production Copilot** — Gemini 2.5 Flash chatbot with live database context, markdown rendering, quick-insight prompts |
+| ![AI Production Copilot](frontend/public/ld.png) | **AI Production Copilot** — Gemini 2.5 Flash chatbot with live database context, markdown rendering, quick-insight prompts |
+| ![Quality Control](frontend/public/ld%20(2).png) | **Quality Control (AI Vision)** — Roboflow computer vision for plant & fruit inspection, bounding box overlay, inspection history |
+| ![Auto Report](frontend/public/ld%20(3).png) | **Auto-Report Generator** — Daily/weekly/monthly reports with AI analysis, health distribution, expiry alerts, PDF/CSV export |
+| ![Data Ingestion](frontend/public/ld%20(4).png) | **Data Ingestion** — Multi-file drag-and-drop upload, Gemini OCR extraction, duplicate detection, ingestion history log |
+| ![Interactive Floor Plan](frontend/public/ld%20(5).png) | **Interactive Floor Plan (Digital Twin)** — Drag-and-resize zone canvas, AI placement recommendations, multi-floor tab support |
 
 ---
 
