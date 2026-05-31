@@ -15,6 +15,7 @@ import floorPlanUploadRoutes from './routes/floor-plan-upload.js';
 import notificationsRoutes from './routes/notifications.js';
 import qcRoutes from './routes/qc.js';
 import zonesRoutes from './routes/zones.js';
+import ingestionHistoryRoutes from './routes/ingestion-history.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -50,6 +51,7 @@ app.use('/api/floor-plan-upload', floorPlanUploadRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/qc', qcRoutes);
 app.use('/api/zones', zonesRoutes);
+app.use('/api/ingestion-history', ingestionHistoryRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { api } from './api';
 
 export type Language = 'id' | 'en';
 
@@ -107,6 +108,10 @@ export const translations = {
     updateProfileFail: 'Gagal memperbarui profil.',
     changePasswordSuccess: 'Password berhasil diubah!',
     backToDefault: 'Kembali ke Default',
+    languageSettingsTitle: 'Pengaturan Bahasa',
+    languageSettingsSub: 'Pilih bahasa tampilan untuk aplikasi AromaSys.',
+    langSuccessId: 'Bahasa berhasil diubah ke Bahasa Indonesia',
+    langSuccessEn: 'Bahasa berhasil diubah ke Bahasa Inggris',
 
     // Chatbot
     chatbotTitle: 'Kopilot Produksi',
@@ -222,6 +227,58 @@ export const translations = {
     userManagementSub: 'Kelola akun dan peran pengguna sistem.',
     addEmployee: 'Tambah Karyawan',
     searchUsers: 'Cari pengguna...',
+
+    // Landing page
+    landingTitle1: 'AromaSys',
+    landingTitle2: 'Sistem Gudang',
+    landingSub: 'Teknologi pemantauan sensorik modern dan pelacakan batch aktif untuk Sima Arome. Kelola kemurnian minyak esensial dan rantai dingin dalam satu konsol cerdas.',
+    signUpBtn: 'Daftar',
+    signInBtn: 'Masuk',
+    copyright: '© 2026 Logistik AromaSys. Hak Cipta Dilindungi.',
+
+    // Sign In page
+    signInTitle: 'Masuk',
+    signInSubtitle: 'Masuk ke akun AromaSys Anda',
+    emailPlaceholder: 'john.doe@gmail.com',
+    passwordPlaceholder: '••••••••••',
+    rememberMe: 'Ingat saya',
+    forgotPassword: 'Lupa Password?',
+    dontHaveAccount: 'Belum punya akun?',
+    signUpNow: 'Daftar Sekarang',
+    signInSubmit: 'Masuk',
+    signInQuotePart1: 'Menjaga Kualitas,',
+    signInQuotePart2: 'Mengalirkan Aroma.',
+    signInQuoteDesc: 'Pemantauan presisi sensor suhu dan kelembapan real-time untuk menjamin kesegaran esensial konsentrat parfum terbaik.',
+
+    // Sign Up page
+    signUpTitle: 'Daftar',
+    signUpSubtitle: 'Daftar akun perusahaan baru',
+    fullNameLabel: 'Nama Lengkap',
+    fullNamePlaceholder: 'Nama lengkap Anda',
+    roleLabelSelect: 'Pilih peran...',
+    roleWarehouseStaff: 'Staf Gudang (Aroma Stock)',
+    roleQCSelect: 'Kontrol Kualitas (Penilai Lab)',
+    rolePPICSelect: 'Perencana Produksi (PPIC)',
+    roleAdminSelect: 'Manajer Operasional (Admin)',
+    confirmPasswordLabel: 'Konfirmasi Password',
+    signUpSubmit: 'Daftar',
+    alreadyHaveAccount: 'Sudah memiliki akun?',
+    signInNow: 'Masuk Sekarang',
+    signUpQuotePart1: 'Presisi',
+    signUpQuotePart2: 'di Setiap Tetes.',
+    signUpQuoteDesc: 'Integrasi digital twin dan analisis AI untuk manajemen inventori bahan baku parfum yang optimal dan FIFO yang akurat.',
+    backBtn: 'Kembali',
+    emailRequired: 'Email wajib diisi',
+    emailInvalid: 'Format email tidak valid',
+    passwordRequired: 'Password wajib diisi',
+    passwordMinLengthErr: 'Password minimal 6 karakter',
+    connFailed: 'Koneksi ke server otentikasi gagal.',
+    invalidCreds: 'Kredensial tidak valid',
+    nameRequired: 'Nama lengkap wajib diisi',
+    roleRequired: 'Peran wajib diisi',
+    passwordsNoMatch: 'Password tidak cocok',
+    registerFailed: 'Gagal melakukan pendaftaran',
+    registerConnFailed: 'Koneksi ke server pendaftaran gagal.',
   },
   en: {
     // Navigation - Sidebar Groups
@@ -327,6 +384,10 @@ export const translations = {
     updateProfileFail: 'Failed to update profile.',
     changePasswordSuccess: 'Password changed successfully!',
     backToDefault: 'Back to Default',
+    languageSettingsTitle: 'Language Settings',
+    languageSettingsSub: 'Choose the display language for AromaSys.',
+    langSuccessId: 'Language successfully changed to Bahasa Indonesia',
+    langSuccessEn: 'Language successfully changed to English',
 
     // Chatbot
     chatbotTitle: 'Production Copilot',
@@ -442,6 +503,58 @@ export const translations = {
     userManagementSub: 'Manage user accounts and system roles.',
     addEmployee: 'Add Employee',
     searchUsers: 'Search users...',
+
+    // Landing page
+    landingTitle1: 'AromaSys',
+    landingTitle2: 'Warehouse System',
+    landingSub: 'Next-generation sensory telemetry and active batch tracking for Sima Arome. Monitor essential oil purity and cold-chain metrics in one intelligent console.',
+    signUpBtn: 'Sign Up',
+    signInBtn: 'Sign In',
+    copyright: '© 2026 AromaSys Logistics. All rights reserved.',
+
+    // Sign In page
+    signInTitle: 'Sign In',
+    signInSubtitle: 'Sign In to your AromaSys account',
+    emailPlaceholder: 'john.doe@gmail.com',
+    passwordPlaceholder: '••••••••••',
+    rememberMe: 'Remember me',
+    forgotPassword: 'Forgot Password?',
+    dontHaveAccount: "Don't have an account?",
+    signUpNow: 'Sign Up Now',
+    signInSubmit: 'Sign In',
+    signInQuotePart1: 'Preserving Quality,',
+    signInQuotePart2: 'Releasing Aroma.',
+    signInQuoteDesc: 'Precision real-time monitoring of temperature and humidity sensors to guarantee the freshness of premium essential oils.',
+
+    // Sign Up page
+    signUpTitle: 'Sign Up',
+    signUpSubtitle: 'Sign up for a new enterprise account',
+    fullNameLabel: 'Full Name',
+    fullNamePlaceholder: 'Your Full Name',
+    roleLabelSelect: 'Select a role...',
+    roleWarehouseStaff: 'Warehouse Staff (Aroma Stock)',
+    roleQCSelect: 'Quality Control (Lab Assessor)',
+    rolePPICSelect: 'Production Planner (PPIC)',
+    roleAdminSelect: 'Operations Manager (Admin)',
+    confirmPasswordLabel: 'Confirm Password',
+    signUpSubmit: 'Sign Up',
+    alreadyHaveAccount: 'Already have an account?',
+    signInNow: 'Sign In Now',
+    signUpQuotePart1: 'Precision',
+    signUpQuotePart2: 'in Every Drop.',
+    signUpQuoteDesc: 'Digital twin integration and AI analysis for optimal perfume raw material inventory management and accurate FIFO tracking.',
+    backBtn: 'Back',
+    emailRequired: 'Email is required',
+    emailInvalid: 'Invalid email format',
+    passwordRequired: 'Password is required',
+    passwordMinLengthErr: 'Password must be at least 6 characters',
+    connFailed: 'Connection to authentication server failed.',
+    invalidCreds: 'Invalid credentials',
+    nameRequired: 'Full name is required',
+    roleRequired: 'Role is required',
+    passwordsNoMatch: 'Passwords do not match',
+    registerFailed: 'Failed to register',
+    registerConnFailed: 'Connection to registration server failed.',
   }
 };
 
@@ -463,6 +576,13 @@ export function useLanguage() {
       localStorage.setItem('aromasys_language', newLang);
       // Dispatch a custom event to notify other components/pages
       window.dispatchEvent(new Event('languageChange'));
+
+      // If logged in, persist to database
+      const token = localStorage.getItem('aromasys_token');
+      if (token) {
+        api.put('/profile/settings/language', { settings: { language: newLang } })
+          .catch(e => console.error('Failed to sync language to DB:', e));
+      }
     }
   };
 

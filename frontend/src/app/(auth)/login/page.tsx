@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { useLanguage } from "@/lib/i18n";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
+  const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -20,11 +22,11 @@ export default function LoginPage() {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
-    if (!email) newErrors.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Invalid email format";
+    if (!email) newErrors.email = t("emailRequired");
+    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = t("emailInvalid");
 
-    if (!password) newErrors.password = "Password is required";
-    else if (password.length < 6) newErrors.password = "Password must be at least 6 characters";
+    if (!password) newErrors.password = t("passwordRequired");
+    else if (password.length < 6) newErrors.password = t("passwordMinLengthErr");
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -44,11 +46,11 @@ export default function LoginPage() {
         }
         router.push("/overview");
       } else {
-        setErrors({ submit: res.error || "Invalid credentials" });
+        setErrors({ submit: res.error || t("invalidCreds") });
       }
     } catch (err) {
       setIsLoading(false);
-      setErrors({ submit: "Connection to authentication server failed." });
+      setErrors({ submit: t("connFailed") });
     }
   };
 
@@ -65,7 +67,7 @@ export default function LoginPage() {
               onClick={() => router.push('/')} 
               className="flex items-center gap-1.5 text-xs font-bold text-brand-sage-grey hover:text-brand-sage-charcoal transition-all focus:outline-none"
             >
-              <span className="text-sm">←</span> Back
+              <span className="text-sm">←</span> {t("backBtn")}
             </button>
           </div>
 
@@ -73,10 +75,10 @@ export default function LoginPage() {
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 mb-3">
               <img src="/logo-aromasys-new.png" alt="AromaSys" className="w-8 h-8 object-contain" />
-              <span className="font-bold text-lg text-brand-sage-charcoal">AromaSys</span>
+              <span className="font-bold text-lg text-brand-sage-charcoal">{t("landingTitle1")}</span>
             </div>
-            <h1 className="text-4xl font-extrabold text-brand-sage-charcoal tracking-tight">Sign In</h1>
-            <p className="text-sm text-brand-sage-grey font-medium tracking-wide">Sign In to your AromaSys account</p>
+            <h1 className="text-4xl font-extrabold text-brand-sage-charcoal tracking-tight">{t("signInTitle")}</h1>
+            <p className="text-sm text-brand-sage-grey font-medium tracking-wide">{t("signInSubtitle")}</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
@@ -87,7 +89,7 @@ export default function LoginPage() {
               </label>
               <input
                 type="email"
-                placeholder="john.doe@gmail.com"
+                placeholder={t("emailPlaceholder")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-transparent border border-brand-sage-grey/50 focus:border-brand-sage-green rounded-lg px-4 py-3.5 text-sm text-brand-sage-charcoal placeholder:text-brand-sage-grey/40 focus:outline-none focus:ring-1 focus:ring-brand-sage-green/20 transition-all font-semibold"
@@ -103,7 +105,7 @@ export default function LoginPage() {
               <div className="relative flex items-center">
                 <input
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••••"
+                  placeholder={t("passwordPlaceholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-transparent border border-brand-sage-grey/50 focus:border-brand-sage-green rounded-lg px-4 py-3.5 text-sm text-brand-sage-charcoal placeholder:text-brand-sage-grey/40 focus:outline-none focus:ring-1 focus:ring-brand-sage-green/20 transition-all font-semibold pr-12"
@@ -130,10 +132,10 @@ export default function LoginPage() {
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="rounded border border-brand-sage-grey/50 bg-transparent text-[#00a81c] focus:ring-0 focus:ring-offset-0 cursor-pointer w-4 h-4"
                 />
-                <span className="text-xs font-semibold text-brand-sage-grey">Remember me</span>
+                <span className="text-xs font-semibold text-brand-sage-grey">{t("rememberMe")}</span>
               </label>
               <a href="#" className="text-xs font-bold text-brand-sage-coral hover:text-brand-sage-coral/80 transition-all">
-                Forgot Password
+                {t("forgotPassword")}
               </a>
             </div>
 
@@ -149,16 +151,16 @@ export default function LoginPage() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               ) : (
-                "Sign In"
+                t("signInSubmit")
               )}
             </button>
           </form>
 
-          {/* Already have an account */}
+          {/* Don't have an account */}
           <div className="text-center text-xs pt-2">
-            <span className="text-brand-sage-charcoal/80 font-medium">Already have an account? </span>
+            <span className="text-brand-sage-charcoal/80 font-medium">{t("dontHaveAccount")} </span>
             <Link href="/register" className="font-bold text-[#00a81c] hover:text-[#00be20] transition-all">
-              Sign Up
+              {t("signUpNow")}
             </Link>
           </div>
 
@@ -173,6 +175,18 @@ export default function LoginPage() {
             alt="Sign In Aromatic Dropper"
             className="h-full w-full object-cover"
           />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
+          
+          {/* Bottom Left Quote */}
+          <div className="absolute bottom-20 left-20 text-left pr-10">
+            <h2 className="text-5xl md:text-6xl xl:text-[72px] font-black leading-[0.95] tracking-tighter font-sans">
+              <span className="text-white block">{t("signInQuotePart1")}</span>
+              <span className="text-[#BCF389] block mt-2">{t("signInQuotePart2")}</span>
+            </h2>
+            <p className="text-stone-300 text-sm font-medium tracking-wide mt-4 max-w-md font-sans">
+              {t("signInQuoteDesc")}
+            </p>
+          </div>
         </div>
       </div>
 

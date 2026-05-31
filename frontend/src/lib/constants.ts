@@ -2,6 +2,15 @@ import { AromaItem, IngestionRecord, WarehouseZone, User } from "../types";
 
 export const APP_NAME = "Sima Arome";
 
+// Shared zone temperature thresholds — single source of truth used by cold-chain page, overview, and AI panel
+export const ZONE_TEMP_THRESHOLDS: Record<string, { min: number; max: number; label: string }> = {
+  A: { min: 20, max: 30, label: 'Zona A – Bahan Kering' },
+  B: { min: 15, max: 25, label: 'Zona B – Bahan Cair' },
+  C: { min: 18, max: 28, label: 'Zona C – Bahan Umum' },
+  D: { min: -5, max: 5,  label: 'Zona D – Cold Storage' },
+  E: { min: 15, max: 25, label: 'Zona E – Bahan Berbahaya' },
+};
+
 export interface NavigationItem {
   name: string;
   href: string;

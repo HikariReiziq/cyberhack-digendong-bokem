@@ -1,6 +1,7 @@
 'use client';
 import { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
 import type { Notification, NotificationType } from '@/types';
+import { api } from './api';
 
 interface NotificationContextValue {
   notifications: Notification[];
@@ -11,13 +12,6 @@ interface NotificationContextValue {
 }
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
-
-function getAuthToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('aromasys_token');
-}
 
 function createDefaultNotifications(): Notification[] {
   const now = Date.now();
@@ -30,14 +24,8 @@ function createDefaultNotifications(): Notification[] {
 }
 
 async function fetchReadState(): Promise<string[]> {
-  const token = getAuthToken();
-  if (!token) return [];
   try {
-    const res = await fetch(`${API_BASE}/notifications/read-state`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
+    const data = await api.get<{ success: boolean; readIds: string[] }>('/notifications/read-state');
     return data.readIds ?? [];
   } catch {
     return [];
@@ -45,38 +33,21 @@ async function fetchReadState(): Promise<string[]> {
 }
 
 async function postMarkRead(notificationIds: string[]): Promise<void> {
-  const token = getAuthToken();
-  if (!token) return;
   try {
-    await fetch(`${API_BASE}/notifications/mark-read`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ notificationIds }),
-    });
+    await api.post('/notifications/mark-read', { notificationIds });
   } catch {
     // Silently fail — optimistic update already applied
   }
 }
 
 async function postMarkAllRead(notificationIds: string[]): Promise<void> {
-  const token = getAuthToken();
-  if (!token) return;
   try {
-    await fetch(`${API_BASE}/notifications/mark-all-read`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ notificationIds }),
-    });
+    await api.post('/notifications/mark-all-read', { notificationIds });
   } catch {
     // Silently fail — optimistic update already applied
   }
 }
+
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>(createDefaultNotifications);

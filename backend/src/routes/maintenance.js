@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import pool from '../lib/db.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -15,7 +16,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/maintenance
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -36,13 +37,14 @@ router.post('/', async (req, res) => {
 
     const ticket = ticketRes.rows[0];
 
+    const userRole = req.user?.role || 'Operator';
     await client.query(
       `INSERT INTO audit_logs (timestamp, username, role, action, detail, module) VALUES ($1, $2, $3, $4, $5, $6)`,
       [
         new Date().toISOString().replace('T', ' ').substring(0, 16),
-        createdBy, 'Operator', 'Tiket Maintenance',
-        `Buat tiket maintenance untuk Cold Storage Zona ${zone} — ${description.substring(0, 80)}`,
-        'Digital Twin'
+        createdBy, userRole, 'Tiket Maintenance',
+        `Buat tiket maintenance untuk Zona ${zone} — ${description.substring(0, 80)}`,
+        'Cold Chain'
       ]
     );
 

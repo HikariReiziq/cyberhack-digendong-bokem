@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import axios from 'axios';
-import { GoogleGenAI } from '@google/genai';
 import pool from '../lib/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -21,10 +20,13 @@ const inspectValidation = [
 
 // POST /api/qc/inspect — Submit a QC inspection
 router.post('/inspect', requireAuth, validate(inspectValidation), async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const { imageBase64, materialType, materialId, result, confidence, notes } = req.body;
 
     if (!materialId || !materialType || !result || confidence === undefined) {
+      await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
         error: 'Missing required fields: materialId, materialType, result, confidence'
@@ -32,6 +34,7 @@ router.post('/inspect', requireAuth, validate(inspectValidation), async (req, re
     }
 
     if (!['pass', 'fail'].includes(result)) {
+      await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
         error: 'Result must be "pass" or "fail"'
@@ -39,6 +42,7 @@ router.post('/inspect', requireAuth, validate(inspectValidation), async (req, re
     }
 
     if (confidence < 0 || confidence > 100) {
+      await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
         error: 'Confidence must be between 0 and 100'
@@ -47,7 +51,7 @@ router.post('/inspect', requireAuth, validate(inspectValidation), async (req, re
 
     const inspectedBy = req.user?.id || null;
 
-    const insertResult = await pool.query(
+    const insertResult = await client.query(
       `INSERT INTO qc_inspections (material_id, material_type, result, confidence, notes, image, inspected_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
@@ -59,7 +63,7 @@ router.post('/inspect', requireAuth, validate(inspectValidation), async (req, re
     // Create audit trail entry
     const username = req.user?.name || 'System';
     const role = req.user?.role || 'Unknown';
-    await pool.query(
+    await client.query(
       'INSERT INTO audit_logs (timestamp, username, role, action, detail, module) VALUES ($1, $2, $3, $4, $5, $6)',
       [
         new Date().toISOString().replace('T', ' ').substring(0, 16),
@@ -70,6 +74,8 @@ router.post('/inspect', requireAuth, validate(inspectValidation), async (req, re
         'QC'
       ]
     );
+
+    await client.query('COMMIT');
 
     return res.json({
       success: true,
@@ -85,8 +91,11 @@ router.post('/inspect', requireAuth, validate(inspectValidation), async (req, re
       }
     });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Error creating QC inspection:', error);
     return res.status(500).json({ success: false, error: error.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -134,7 +143,7 @@ const analyzeValidation = [
     .isIn(['fruit', 'raw-material', 'extract', 'powder', 'plant']).withMessage('materialType must be one of: fruit, raw-material, extract, powder, plant'),
 ];
 
-// POST /api/qc/analyze - Roboflow + Gemini Integration
+// POST /api/qc/analyze - Roboflow Integration
 router.post('/analyze', requireAuth, validate(analyzeValidation), async (req, res) => {
   try {
     const { imageBase64, materialId, materialType, autoSave = true } = req.body;
@@ -213,30 +222,41 @@ router.post('/analyze', requireAuth, validate(analyzeValidation), async (req, re
     let inspectionId = null;
 
     if (autoSave) {
-      // 3. Log to Database
-      const inspectedBy = req.user?.id || null;
-      const insertResult = await pool.query(
-        `INSERT INTO qc_inspections (material_id, material_type, result, confidence, notes, image, inspected_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING *`,
-        [materialId, actualMaterialType, dbResult, confidence, reason, imageBase64, inspectedBy]
-      );
-      inspectionId = insertResult.rows[0].id;
+      // 3. Log to Database with transactional safety
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const inspectedBy = req.user?.id || null;
+        const insertResult = await client.query(
+          `INSERT INTO qc_inspections (material_id, material_type, result, confidence, notes, image, inspected_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *`,
+          [materialId, actualMaterialType, dbResult, confidence, reason, imageBase64, inspectedBy]
+        );
+        inspectionId = insertResult.rows[0].id;
 
-      // Create audit trail entry
-      const username = req.user?.name || 'System';
-      const role = req.user?.role || 'Unknown';
-      await pool.query(
-        'INSERT INTO audit_logs (timestamp, username, role, action, detail, module) VALUES ($1, $2, $3, $4, $5, $6)',
-        [
-          new Date().toISOString().replace('T', ' ').substring(0, 16),
-          username,
-          role,
-          'QC AI Analysis',
-          `QC AI Analysis for ${actualMaterialType} (${materialId}): ${status} - ${reason}`,
-          'QC'
-        ]
-      );
+        // Create audit trail entry
+        const username = req.user?.name || 'System';
+        const role = req.user?.role || 'Unknown';
+        await client.query(
+          'INSERT INTO audit_logs (timestamp, username, role, action, detail, module) VALUES ($1, $2, $3, $4, $5, $6)',
+          [
+            new Date().toISOString().replace('T', ' ').substring(0, 16),
+            username,
+            role,
+            'QC AI Analysis',
+            `QC AI Analysis for ${actualMaterialType} (${materialId}): ${status} - ${reason}`,
+            'QC'
+          ]
+        );
+        await client.query('COMMIT');
+      } catch (dbError) {
+        await client.query('ROLLBACK');
+        console.error('Error during QC autoSave insertion:', dbError);
+        throw dbError;
+      } finally {
+        client.release();
+      }
     }
 
     return res.json({

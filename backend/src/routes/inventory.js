@@ -4,6 +4,32 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
+const IMAGE_MAX_BYTES = 2 * 1024 * 1024; // exactly 2MB
+const VALID_IMAGE_PATTERN = /^data:image\/(jpeg|png|webp);base64,.+/;
+
+// Calculate status from expiry date
+function calcStatus(expiry) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const exp = new Date(expiry);
+  const daysLeft = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return 'Expired';
+  if (daysLeft <= 7) return 'Kritis';
+  if (daysLeft <= 30) return 'Warning';
+  return 'Aman';
+}
+
+// Validate image field, returns error string or null
+function validateImage(image) {
+  if (!VALID_IMAGE_PATTERN.test(image)) {
+    return 'Format gambar tidak valid. Gunakan JPEG, PNG, atau WebP.';
+  }
+  if (image.length > IMAGE_MAX_BYTES) {
+    return 'Ukuran gambar melebihi batas 2MB.';
+  }
+  return null;
+}
+
 // GET /api/inventory
 router.get('/', async (req, res) => {
   try {
@@ -58,12 +84,24 @@ router.post('/', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { id, name, category, qty, unit, location, zone, dateIn, expiry, status, user } = req.body;
+    const { id, name, category, qty, unit, location, zone, dateIn, expiry, image, user } = req.body;
+
+    // Validate image if provided
+    if (image) {
+      const imgErr = validateImage(image);
+      if (imgErr) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: imgErr });
+      }
+    }
+
+    // Auto-calculate status from expiry date
+    const status = calcStatus(expiry);
 
     await client.query(
-      `INSERT INTO inventory (id, name, category, qty, unit, location, zone, date_in, expiry, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [id, name, category, qty, unit, location, zone, dateIn, expiry, status]
+      `INSERT INTO inventory (id, name, category, qty, unit, location, zone, date_in, expiry, status, image)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, name, category, qty, unit, location, zone, dateIn, expiry, status, image || null]
     );
 
     if (location && location !== 'UNASSIGNED') {
@@ -73,11 +111,11 @@ router.post('/', requireAuth, async (req, res) => {
     const detail = `Menambahkan ${name} (${qty} ${unit}) di Slot ${location}`;
     await client.query(
       `INSERT INTO audit_logs (timestamp, username, role, action, detail, module) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [new Date().toISOString().replace('T', ' ').substring(0, 16), user?.name || 'Unknown', user?.role || 'Operator', 'Tambah Stok', detail, 'Settings']
+      [new Date().toISOString().replace('T', ' ').substring(0, 16), user?.name || 'Unknown', user?.role || 'Operator', 'Tambah Stok', detail, 'Inventory']
     );
 
     await client.query('COMMIT');
-    return res.json({ success: true });
+    return res.json({ success: true, status });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error adding to inventory:', error);
@@ -92,17 +130,19 @@ router.put('/', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { id, name, category, qty, unit, location, zone, dateIn, expiry, status, user, image } = req.body;
+    const { id, name, category, qty, unit, location, zone, dateIn, expiry, user, image } = req.body;
 
+    // Validate image if provided
     if (image !== undefined && image !== null) {
-      const validImagePattern = /^data:image\/(jpeg|png|webp);base64,.+/;
-      if (!validImagePattern.test(image)) {
-        return res.status(400).json({ success: false, error: "Invalid image format. Supported: JPEG, PNG, WebP" });
-      }
-      if (image.length > 2796202) {
-        return res.status(400).json({ success: false, error: "Image file size exceeds 2MB limit" });
+      const imgErr = validateImage(image);
+      if (imgErr) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: imgErr });
       }
     }
+
+    // Auto-calculate status from expiry date
+    const status = calcStatus(expiry);
 
     const oldRes = await client.query('SELECT location FROM inventory WHERE id = $1', [id]);
     const oldLocation = oldRes.rows[0]?.location;
@@ -119,19 +159,24 @@ router.put('/', requireAuth, async (req, res) => {
       );
     }
 
+    // Update slots: free old, occupy new (only for real slot IDs)
     if (oldLocation && oldLocation !== location) {
-      await client.query('UPDATE slots SET occupied = false, item_id = null WHERE id = $1', [oldLocation]);
-      await client.query('UPDATE slots SET occupied = true, item_id = $1 WHERE id = $2', [id, location]);
+      if (oldLocation !== 'UNASSIGNED') {
+        await client.query('UPDATE slots SET occupied = false, item_id = null WHERE id = $1', [oldLocation]);
+      }
+      if (location && location !== 'UNASSIGNED') {
+        await client.query('UPDATE slots SET occupied = true, item_id = $1 WHERE id = $2', [id, location]);
+      }
     }
 
     const detail = `Mengubah data bahan baku ${name} (ID: ${id})`;
     await client.query(
       `INSERT INTO audit_logs (timestamp, username, role, action, detail, module) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [new Date().toISOString().replace('T', ' ').substring(0, 16), user?.name || 'Unknown', user?.role || 'Operator', 'Edit Data', detail, 'Settings']
+      [new Date().toISOString().replace('T', ' ').substring(0, 16), user?.name || 'Unknown', user?.role || 'Operator', 'Edit Data', detail, 'Inventory']
     );
 
     await client.query('COMMIT');
-    return res.json({ success: true });
+    return res.json({ success: true, status });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error updating inventory:', error);
@@ -157,13 +202,17 @@ router.delete('/', requireRole(['QC', 'Admin', 'PPIC']), async (req, res) => {
     const item = itemRes.rows[0];
     if (!item) throw new Error('Bahan baku tidak ditemukan');
 
-    await client.query('UPDATE slots SET occupied = false, item_id = null WHERE id = $1', [item.location]);
+    // Only update slots if item was assigned to a real slot
+    if (item.location && item.location !== 'UNASSIGNED') {
+      await client.query('UPDATE slots SET occupied = false, item_id = null WHERE id = $1', [item.location]);
+    }
+
     await client.query('DELETE FROM inventory WHERE id = $1', [id]);
 
     const detail = `Menghapus data bahan baku ${item.name} (ID: ${id}) dari database`;
     await client.query(
       `INSERT INTO audit_logs (timestamp, username, role, action, detail, module) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [new Date().toISOString().replace('T', ' ').substring(0, 16), userName, userRole, 'Hapus Data', detail, 'Settings']
+      [new Date().toISOString().replace('T', ' ').substring(0, 16), userName, userRole, 'Hapus Data', detail, 'Inventory']
     );
 
     await client.query('COMMIT');

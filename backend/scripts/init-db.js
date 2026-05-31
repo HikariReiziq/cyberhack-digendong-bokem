@@ -89,6 +89,7 @@ async function init() {
   
   try {
     console.log('Dropping existing tables if any...');
+    await client.query('DROP TABLE IF EXISTS ingestion_history CASCADE;');
     await client.query('DROP TABLE IF EXISTS app_settings CASCADE;');
     await client.query('DROP TABLE IF EXISTS qc_inspections CASCADE;');
     await client.query('DROP TABLE IF EXISTS notification_reads CASCADE;');
@@ -202,8 +203,23 @@ async function init() {
         confidence DECIMAL(5, 2) NOT NULL,
         notes TEXT,
         image TEXT,
-        inspected_by INTEGER REFERENCES users(id),
+        inspected_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         inspected_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE ingestion_history (
+        id VARCHAR(50) PRIMARY KEY,
+        file_name VARCHAR(255) NOT NULL,
+        file_size VARCHAR(50),
+        category VARCHAR(100),
+        record_count INTEGER DEFAULT 0,
+        uploaded_by VARCHAR(100),
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        uploaded_at TIMESTAMP DEFAULT NOW(),
+        status VARCHAR(20) DEFAULT 'Validated',
+        notes TEXT
       );
     `);
     

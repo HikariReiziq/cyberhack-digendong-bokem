@@ -21,8 +21,11 @@ import { useLanguage } from "@/lib/i18n";
 type MaterialTab = "fruit-raw" | "extract-powder";
 
 interface QCResult {
-  status: "ACCEPTED" | "REJECTED";
-  reason: string;
+  status?: "ACCEPTED" | "REJECTED";
+  reason?: string;
+  result?: "pass" | "fail";
+  confidence?: number;
+  notes?: string;
   roboflowClasses?: string[];
   predictions?: any[];
 }
@@ -50,12 +53,13 @@ export default function QCPage() {
   const [autoSave, setAutoSave] = useState(false);
   const [history, setHistory] = useState<InspectionRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualResult, setManualResult] = useState<"pass" | "fail">("pass");
   const [manualConfidence, setManualConfidence] = useState(80);
   const [manualNotes, setManualNotes] = useState("");
-  const [imageDimensions, setImageDimensions] = useState<{width: number, height: number} | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
 
   // Camera state
   const [cameraActive, setCameraActive] = useState(false);
@@ -68,13 +72,14 @@ export default function QCPage() {
   // Fetch inspection history
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
+    setHistoryError(null);
     try {
       const data = await api.get<{ success: boolean; inspections: InspectionRecord[] }>("/qc/history");
       if (data.success) {
         setHistory(data.inspections);
       }
     } catch {
-      // Silently fail for history
+      setHistoryError("Gagal memuat riwayat inspeksi. Periksa koneksi dan coba lagi.");
     } finally {
       setHistoryLoading(false);
     }
@@ -135,6 +140,10 @@ export default function QCPage() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setError("Ukuran berkas melebihi batas 2MB. Silakan unggah gambar yang lebih kecil.");
+      return;
+    }
     setError(null);
     const reader = new FileReader();
     reader.onload = () => {
@@ -148,10 +157,10 @@ export default function QCPage() {
       setError("Silakan ambil gambar atau upload file terlebih dahulu.");
       return;
     }
-    
+
     let currentMaterialId = materialId.trim();
     if (!currentMaterialId) {
-      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
       const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
       currentMaterialId = `MAT-${dateStr}-${randomStr}`;
       setMaterialId(currentMaterialId);
@@ -163,11 +172,21 @@ export default function QCPage() {
     setSaveSuccess(false);
 
     try {
-      const response = await api.post<{ success: boolean, data: { status: "ACCEPTED" | "REJECTED", reason: string, inspectionId: number | null, roboflowClasses: string[], predictions: any[] }, error?: string }>("/qc/analyze", {
+      const response = await api.post<{
+        success: boolean;
+        data: {
+          status: "ACCEPTED" | "REJECTED";
+          reason: string;
+          inspectionId: number | null;
+          roboflowClasses: string[];
+          predictions: any[];
+        };
+        error?: string;
+      }>("/qc/analyze", {
         imageBase64,
         materialId: currentMaterialId,
         materialType,
-        autoSave
+        autoSave,
       });
 
       if (!response.success || !response.data) {
@@ -175,46 +194,69 @@ export default function QCPage() {
       }
 
       setQcResult({
-        status: response.data.status as "ACCEPTED" | "REJECTED",
+        status: response.data.status,
         reason: response.data.reason,
         roboflowClasses: response.data.roboflowClasses,
-        predictions: response.data.predictions
+        predictions: response.data.predictions,
       });
+
       if (autoSave) {
         setSaveSuccess(true);
         fetchHistory();
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Terjadi kesalahan";
-      setError(`Inspeksi gagal: ${errMsg}.`);
+      setError(
+        `Layanan AI sedang tidak tersedia (${errMsg}). Silakan lakukan inspeksi manual menggunakan form di bawah.`
+      );
+      setShowManualForm(true);
     } finally {
       setIsInspecting(false);
     }
   };
 
   const saveToDatabase = async () => {
-    if (!qcResult || !imageBase64 || !materialId) return;
+    if (!qcResult || !materialId.trim()) return;
     setIsSaving(true);
     try {
-      let confidence = 80;
-      if (qcResult.predictions && qcResult.predictions.length > 0) {
-        confidence = qcResult.predictions.reduce((sum, p) => sum + p.confidence, 0) / qcResult.predictions.length * 100;
+      let resultVal: "pass" | "fail" = "pass";
+      let confidenceVal = 80;
+      let notesVal = "";
+
+      if (qcResult.status !== undefined) {
+        // AI Roboflow Path
+        resultVal = qcResult.status === "ACCEPTED" ? "pass" : "fail";
+        notesVal = qcResult.reason || "";
+        if (qcResult.predictions && qcResult.predictions.length > 0) {
+          confidenceVal =
+            (qcResult.predictions.reduce((sum, p) => sum + p.confidence, 0) /
+              qcResult.predictions.length) *
+            100;
+        }
+      } else {
+        // Manual/Old Path
+        resultVal = qcResult.result || "pass";
+        confidenceVal = qcResult.confidence !== undefined ? qcResult.confidence : 80;
+        notesVal = qcResult.notes || "";
       }
-      
+
       const res = await api.post<{ success: boolean }>("/qc/inspect", {
         imageBase64,
-        materialId,
         materialType,
-        result: qcResult.status === "ACCEPTED" ? "pass" : "fail",
-        confidence,
-        notes: qcResult.reason
+        materialId: materialId.trim(),
+        result: resultVal,
+        confidence: confidenceVal,
+        notes: notesVal,
       });
+
       if (res.success) {
         setSaveSuccess(true);
         fetchHistory();
+      } else {
+        throw new Error("Gagal menyimpan data");
       }
-    } catch (err) {
-      setError("Gagal menyimpan ke database");
+    } catch {
+      setError("Gagal menyimpan hasil inspeksi ke database.");
     } finally {
       setIsSaving(false);
     }
@@ -230,6 +272,7 @@ export default function QCPage() {
     setManualResult("pass");
     setManualConfidence(80);
     setManualNotes("");
+    setImageDimensions(null);
   };
 
   const submitManualInspection = () => {
@@ -242,8 +285,9 @@ export default function QCPage() {
       return;
     }
     setQcResult({
-      status: manualResult === "pass" ? "ACCEPTED" : "REJECTED",
-      reason: `[Inspeksi Manual] ${manualNotes}`,
+      result: manualResult,
+      confidence: manualConfidence,
+      notes: `[Inspeksi Manual] ${manualNotes}`,
     });
     setShowManualForm(false);
     setError(null);
@@ -254,7 +298,7 @@ export default function QCPage() {
       {/* Page Header */}
       <div>
         <h2 className="text-3xl font-bold text-neutral-800 tracking-tight font-sans">
-          {t('qualityControl')}
+          {t("qualityControl")}
         </h2>
         <p className="text-sm text-stone-500 font-semibold mt-1">
           Inspeksi kualitas material menggunakan AI vision analysis
@@ -264,7 +308,10 @@ export default function QCPage() {
       {/* Tab Navigation */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => { setActiveTab("fruit-raw"); resetInspection(); }}
+          onClick={() => {
+            setActiveTab("fruit-raw");
+            resetInspection();
+          }}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
             activeTab === "fruit-raw"
               ? "bg-[#2C742F] text-white"
@@ -275,7 +322,10 @@ export default function QCPage() {
           Fruit & Raw Material
         </button>
         <button
-          onClick={() => { setActiveTab("extract-powder"); resetInspection(); }}
+          onClick={() => {
+            setActiveTab("extract-powder");
+            resetInspection();
+          }}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
             activeTab === "extract-powder"
               ? "bg-[#2C742F] text-white"
@@ -323,14 +373,25 @@ export default function QCPage() {
                   const top = Math.max(0, ((box.y - box.height / 2) / imageDimensions.height) * 100);
                   const width = (box.width / imageDimensions.width) * 100;
                   const height = (box.height / imageDimensions.height) * 100;
-                  
-                  // Deteksi disease keywords dari class roboflow
-                  const isDisease = ['spot', 'rot', 'rotten', 'blight', 'scab', 'disease', 'mildew', 'rust', 'bad', 'defect'].some(k => box.class.toLowerCase().includes(k));
-                  const borderColor = isDisease ? 'border-[#00FFFF]' : 'border-[#F0E620]'; 
-                  const labelBg = isDisease ? 'bg-[#00FFFF]' : 'bg-[#F0E620]';
-                  
+
+                  // Detect disease keywords
+                  const isDisease = [
+                    "spot",
+                    "rot",
+                    "rotten",
+                    "blight",
+                    "scab",
+                    "disease",
+                    "mildew",
+                    "rust",
+                    "bad",
+                    "defect",
+                  ].some((k) => box.class.toLowerCase().includes(k));
+                  const borderColor = isDisease ? "border-[#00FFFF]" : "border-[#F0E620]";
+                  const labelBg = isDisease ? "bg-[#00FFFF]" : "bg-[#F0E620]";
+
                   return (
-                    <div 
+                    <div
                       key={idx}
                       className={`absolute border-[2px] ${borderColor}`}
                       style={{
@@ -340,7 +401,9 @@ export default function QCPage() {
                         height: `${height}%`,
                       }}
                     >
-                      <div className={`absolute -top-[22px] left-[-2px] ${labelBg} text-black text-[11px] font-bold px-1.5 py-0.5 whitespace-nowrap z-10 tracking-tight`}>
+                      <div
+                        className={`absolute -top-[22px] left-[-2px] ${labelBg} text-black text-[11px] font-bold px-1.5 py-0.5 whitespace-nowrap z-10 tracking-tight`}
+                      >
                         {box.class} {Math.round(box.confidence * 100)}%
                       </div>
                     </div>
@@ -400,7 +463,12 @@ export default function QCPage() {
             )}
             {imageBase64 && (
               <button
-                onClick={() => { setImageBase64(null); setQcResult(null); setSaveSuccess(false); }}
+                onClick={() => {
+                  setImageBase64(null);
+                  setQcResult(null);
+                  setSaveSuccess(false);
+                  setImageDimensions(null);
+                }}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-white border border-stone-200 text-stone-700 text-xs font-bold hover:bg-stone-50 transition-all active:scale-95"
               >
                 Retake / Upload Baru
@@ -408,7 +476,19 @@ export default function QCPage() {
             )}
           </div>
 
-
+          {/* Material ID Input */}
+          <div className="mt-5">
+            <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1.5">
+              Material / Batch ID
+            </label>
+            <input
+              type="text"
+              value={materialId}
+              onChange={(e) => setMaterialId(e.target.value)}
+              placeholder="Contoh: BATCH-2024-001 (Kosongkan untuk auto-generate)"
+              className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-semibold text-neutral-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-[#2C742F]"
+            />
+          </div>
 
           {/* Inspect Button */}
           <button
@@ -458,7 +538,7 @@ export default function QCPage() {
                 Form Inspeksi Manual
               </h4>
               <p className="text-xs text-amber-700">
-                AI tidak tersedia. Gunakan form ini untuk mencatat hasil inspeksi secara manual.
+                AI tidak tersedia atau bermasalah. Gunakan form ini untuk mencatat hasil inspeksi secara manual.
               </p>
               <div>
                 <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1">
@@ -539,28 +619,68 @@ export default function QCPage() {
                 className="space-y-5"
               >
                 {/* Dynamic Alert Banner */}
-                <div className={`p-6 rounded-2xl border-2 flex flex-col gap-4 shadow-sm ${
-                  qcResult.status === "ACCEPTED"
-                    ? "bg-emerald-50 border-emerald-300 text-emerald-800"
-                    : "bg-red-50 border-red-300 text-red-800"
-                }`}>
+                <div
+                  className={`p-6 rounded-2xl border-2 flex flex-col gap-4 shadow-sm ${
+                    qcResult.status === "ACCEPTED" || qcResult.result === "pass"
+                      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                      : "bg-red-50 border-red-300 text-red-800"
+                  }`}
+                >
                   <div className="flex items-center gap-3">
-                    {qcResult.status === "ACCEPTED" ? (
+                    {qcResult.status === "ACCEPTED" || qcResult.result === "pass" ? (
                       <CheckCircle2 className="w-8 h-8 text-emerald-600" />
                     ) : (
                       <XCircle className="w-8 h-8 text-red-600" />
                     )}
                     <span className="text-2xl font-black uppercase">
-                      {qcResult.status}
+                      {qcResult.status || (qcResult.result === "pass" ? "PASS" : "FAIL")}
                     </span>
                   </div>
-                  
+
+                  {/* Confidence display */}
+                  {(qcResult.confidence !== undefined ||
+                    (qcResult.predictions && qcResult.predictions.length > 0)) && (
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-wider block mb-1 opacity-80">
+                        Confidence Level
+                      </span>
+                      <span className="text-3xl font-black text-neutral-800 block">
+                        {qcResult.confidence !== undefined
+                          ? qcResult.confidence
+                          : Math.round(
+                              (qcResult.predictions!.reduce((sum, p) => sum + p.confidence, 0) /
+                                qcResult.predictions!.length) *
+                                100
+                            )}
+                        %
+                      </span>
+                      <div className="w-full bg-stone-200 rounded-full h-2 mt-2 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            qcResult.status === "ACCEPTED" || qcResult.result === "pass"
+                              ? "bg-emerald-500"
+                              : "bg-red-500"
+                          }`}
+                          style={{
+                            width: `${
+                              qcResult.confidence !== undefined
+                                ? qcResult.confidence
+                                : (qcResult.predictions!.reduce((sum, p) => sum + p.confidence, 0) /
+                                    qcResult.predictions!.length) *
+                                  100
+                            }%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <span className="text-xs font-bold uppercase tracking-wider block mb-1 opacity-80">
-                      Alasan Inspeksi
+                      Alasan / Catatan Inspeksi
                     </span>
                     <p className="text-sm font-medium leading-relaxed bg-white/60 p-3 rounded-xl mb-3">
-                      {qcResult.reason}
+                      {qcResult.reason || qcResult.notes}
                     </p>
                   </div>
                 </div>
@@ -571,15 +691,19 @@ export default function QCPage() {
                     Tersimpan di database
                   </div>
                 ) : (
-                  <button 
+                  <button
                     onClick={saveToDatabase}
                     disabled={isSaving}
                     className="w-full py-3 rounded-full bg-white border-2 border-stone-200 text-stone-700 hover:border-[#2C742F] hover:text-[#2C742F] font-bold text-sm text-center flex items-center justify-center gap-2 mt-4 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSaving ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> Menyimpan...</>
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Menyimpan...
+                      </>
                     ) : (
-                      <><Save className="w-4 h-4" /> Simpan ke Database</>
+                      <>
+                        <Save className="w-4 h-4" /> Simpan ke Database
+                      </>
                     )}
                   </button>
                 )}
@@ -614,6 +738,16 @@ export default function QCPage() {
           <div className="flex items-center justify-center py-8 gap-2">
             <Loader2 className="w-5 h-5 animate-spin text-[#2C742F]" />
             <span className="text-sm text-stone-500 font-semibold">Memuat riwayat...</span>
+          </div>
+        ) : historyError ? (
+          <div className="text-center py-8 space-y-3">
+            <p className="text-sm font-semibold text-red-600">{historyError}</p>
+            <button
+              onClick={fetchHistory}
+              className="px-4 py-2 rounded-full bg-[#2C742F] hover:bg-[#2C742F]/90 text-white text-xs font-bold transition-all active:scale-95"
+            >
+              Coba Lagi
+            </button>
           </div>
         ) : history.length === 0 ? (
           <div className="text-center py-8 text-stone-400">

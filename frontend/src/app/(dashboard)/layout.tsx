@@ -553,7 +553,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 mt-2.5 w-80 bg-[#F2F7ED]/95 backdrop-blur-md border border-stone-200/50 rounded-2xl shadow-xl z-50 overflow-hidden text-left"
+                      className="absolute right-0 mt-6 w-80 bg-[#F2F7ED]/95 backdrop-blur-md border border-stone-200/50 rounded-2xl shadow-xl z-50 overflow-hidden text-left"
                     >
                       <div className="p-4 border-b border-stone-200/60 flex items-center justify-between">
                         <span className="text-sm font-bold text-green-950">{t('notificationsTitle')}</span>
@@ -646,7 +646,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                   className="flex items-center gap-2 sm:gap-3 p-1 pr-2 sm:pr-3 rounded-full hover:bg-white/40 transition-all focus:outline-none"
                 >
                   <img
-                    src={user.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200"}
+                    src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'U')}&background=2C742F&color=fff&size=200`}
                     alt={user.name}
                     className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover border border-[#2C742F]/20"
                   />
@@ -668,7 +668,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
                         transition={{ duration: 0.15 }}
-                        className="absolute right-0 mt-2.5 w-52 bg-[#F2F7ED]/95 backdrop-blur-md border border-stone-200/50 rounded-2xl shadow-xl z-50 overflow-hidden text-left"
+                        className="absolute right-0 mt-4 w-52 bg-[#F2F7ED]/95 backdrop-blur-md border border-stone-200/50 rounded-2xl shadow-xl z-50 overflow-hidden text-left"
                       >
                         <div className="p-1 space-y-0.5">
                           <button

@@ -19,13 +19,14 @@ import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
 import Portal from "@/components/Portal";
 import type { TemperatureReading } from "@/types";
+import { ZONE_TEMP_THRESHOLDS } from "@/lib/constants";
 
 const ZONE_METADATA: Record<string, { title: string; subtitle: string; min: number; max: number }> = {
-  A: { title: "Zone A", subtitle: "ZONA A - BAHAN KERING", min: 20, max: 30 },
-  B: { title: "Zone B", subtitle: "ZONA B - BAHAN CAIR", min: 15, max: 25 },
-  C: { title: "Zone C", subtitle: "ZONA C - BAHAN UMUM", min: 18, max: 28 },
-  D: { title: "Zone D", subtitle: "ZONA D - COLD STORAGE", min: -5, max: 5 },
-  E: { title: "Zone E", subtitle: "ZONA E - BAHAN BERBAHAYA", min: 15, max: 25 }
+  A: { title: "Zone A", subtitle: ZONE_TEMP_THRESHOLDS.A.label, ...ZONE_TEMP_THRESHOLDS.A },
+  B: { title: "Zone B", subtitle: ZONE_TEMP_THRESHOLDS.B.label, ...ZONE_TEMP_THRESHOLDS.B },
+  C: { title: "Zone C", subtitle: ZONE_TEMP_THRESHOLDS.C.label, ...ZONE_TEMP_THRESHOLDS.C },
+  D: { title: "Zone D", subtitle: ZONE_TEMP_THRESHOLDS.D.label, ...ZONE_TEMP_THRESHOLDS.D },
+  E: { title: "Zone E", subtitle: ZONE_TEMP_THRESHOLDS.E.label, ...ZONE_TEMP_THRESHOLDS.E },
 };
 
 interface ZoneUIData {
@@ -68,6 +69,7 @@ export default function ColdChainPage() {
   const [ticketPriority, setTicketPriority] = useState("high");
   const [ticketSuccess, setTicketSuccess] = useState(false);
   const [submittingTicket, setSubmittingTicket] = useState(false);
+  const [ticketError, setTicketError] = useState<string | null>(null);
 
   async function fetchTemperatures() {
     try {
@@ -88,6 +90,9 @@ export default function ColdChainPage() {
 
   useEffect(() => {
     Promise.resolve().then(fetchTemperatures);
+    // Auto-refresh every 60 seconds to keep sensor data current
+    const interval = setInterval(fetchTemperatures, 60_000);
+    return () => clearInterval(interval);
   }, []);
 
   const zones: ZoneUIData[] = useMemo(() => {
@@ -106,14 +111,15 @@ export default function ColdChainPage() {
         status = "Warning";
       }
 
-      // Sparkline sampling (6 points)
+      // Sparkline sampling (6 evenly-spaced points, always include the latest)
+      const SPARKLINE_POINTS = 6;
       const sampledReadings = [];
-      if (readings.length <= 6) {
+      if (readings.length <= SPARKLINE_POINTS) {
         sampledReadings.push(...readings);
       } else {
-        const step = Math.floor(readings.length / 6);
-        for (let i = 0; i < 6; i++) {
-          sampledReadings.push(readings[Math.min(readings.length - 1, i * step)]);
+        for (let i = 0; i < SPARKLINE_POINTS; i++) {
+          const idx = Math.round((i / (SPARKLINE_POINTS - 1)) * (readings.length - 1));
+          sampledReadings.push(readings[idx]);
         }
       }
 
@@ -199,22 +205,24 @@ export default function ColdChainPage() {
   async function handleTicketSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmittingTicket(true);
+    setTicketError(null);
     try {
       await api.post('/maintenance', {
         zone: ticketZoneId,
         description: ticketDesc || `Suhu anomali terdeteksi di Zona ${ticketZoneId}`,
         priority: ticketPriority,
-        created_by: user?.name || "Operator"
+        createdBy: user?.name || "Operator"
       });
       setTicketSuccess(true);
       setTimeout(() => {
         setShowTicketModal(false);
         setTicketDesc("");
         setTicketSuccess(false);
-        fetchTemperatures(); // reload
+        setTicketError(null);
+        fetchTemperatures();
       }, 2000);
     } catch {
-      alert("Gagal mengirim tiket.");
+      setTicketError("Gagal mengirim tiket. Periksa koneksi dan coba lagi.");
     } finally {
       setSubmittingTicket(false);
     }
@@ -498,6 +506,12 @@ export default function ColdChainPage() {
                 </div>
               ) : (
                 <form onSubmit={handleTicketSubmit} className="space-y-4">
+                  {ticketError && (
+                    <div className="flex items-center gap-2.5 p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700">
+                      <span className="shrink-0 w-5 h-5 rounded-full bg-red-100 flex items-center justify-center text-red-500 font-extrabold text-[10px]">!</span>
+                      {ticketError}
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Zona</label>
                     <select

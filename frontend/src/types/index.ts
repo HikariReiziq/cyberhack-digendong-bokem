@@ -122,6 +122,7 @@ export interface ChatMessage {
   sender: 'ai' | 'user';
   text: string;
   time: string;
+  image?: string;
 }
 
 export interface MaintenanceTicket {

@@ -20,6 +20,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
 import Portal from "@/components/Portal";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import UpdateStockModal from "@/components/UpdateStockModal";
 import { api } from "@/lib/api";
 import type { InventoryItem, Slot, InventoryStatus } from "@/types";
@@ -62,6 +63,9 @@ export default function InventoryMasterPage() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<{ isOpen: boolean; itemId: string; itemName: string }>({ isOpen: false, itemId: '', itemName: '' });
+  const showDeleteConfirm = (id: string, name: string) => setConfirmState({ isOpen: true, itemId: id, itemName: name });
+  const closeDeleteConfirm = () => setConfirmState(s => ({ ...s, isOpen: false }));
 
   // Toast feedback state
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
@@ -174,34 +178,31 @@ export default function InventoryMasterPage() {
     setModalOpen(true);
   };
 
-  // Delete Handler
-  const handleDeleteItem = async (id: string, name: string) => {
-    if (!canDelete()) {
-      triggerToast("Anda tidak memiliki izin untuk menghapus data", "error");
-      return;
-    }
-    if (deletingId) return; // prevent double-click
-    if (confirm(`Apakah Anda yakin ingin menghapus ${name}?`)) {
-      setDeletingId(id);
-      try {
-        const queryParams = new URLSearchParams({
-          id,
-          userName: user?.name || 'Unknown',
-          userRole: user?.role || 'Operator'
-        });
-        const res = await api.delete<{ success: boolean; error?: string }>(`/inventory?${queryParams.toString()}`);
-        if (res.success) {
-          triggerToast(`Berhasil menghapus "${name}" dari inventori`, "info");
-          fetchData();
-        } else {
-          triggerToast(res.error || 'Gagal menghapus data', 'error');
-        }
-      } catch (err: any) {
-        triggerToast(err.message || 'Gagal menghapus data', 'error');
-      } finally {
-        setDeletingId(null);
+  const doDeleteItem = async () => {
+    const { itemId: id, itemName: name } = confirmState;
+    closeDeleteConfirm();
+    setDeletingId(id);
+    try {
+      const queryParams = new URLSearchParams({ id, userName: user?.name || 'Unknown', userRole: user?.role || 'Operator' });
+      const res = await api.delete<{ success: boolean; error?: string }>(`/inventory?${queryParams.toString()}`);
+      if (res.success) {
+        triggerToast(`Berhasil menghapus "${name}" dari inventori`, "info");
+        fetchData();
+      } else {
+        triggerToast(res.error || 'Gagal menghapus data', 'error');
       }
+    } catch (err: any) {
+      triggerToast(err.message || 'Gagal menghapus data', 'error');
+    } finally {
+      setDeletingId(null);
     }
+  };
+
+  // Delete Handler
+  const handleDeleteItem = (id: string, name: string) => {
+    if (!canDelete()) { triggerToast("Anda tidak memiliki izin untuk menghapus data", "error"); return; }
+    if (deletingId) return;
+    showDeleteConfirm(id, name);
   };
 
   // Submit Handler
@@ -827,19 +828,22 @@ export default function InventoryMasterPage() {
                   </div>
                 </div>
 
-                {/* Status Selection */}
+                {/* Status — auto-calculated from expiry date on backend */}
                 <div className="space-y-1.5">
                   <label className="text-stone-700 text-xs font-bold uppercase tracking-wider block">Status Kedaluwarsa</label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as InventoryStatus })}
-                    className="w-full px-3.5 py-2.5 bg-white rounded-xl border border-stone-300 focus:border-[#2C742F] focus:outline-none text-sm text-[#1C1B1F] font-semibold transition-colors"
-                  >
-                    <option value="Aman">Optimal (Aman)</option>
-                    <option value="Warning">Warning (Mendekati Expired)</option>
-                    <option value="Kritis">Kritis (Segera Tindak)</option>
-                    <option value="Expired">Expired (Kedaluwarsa)</option>
-                  </select>
+                  {(() => {
+                    const today = new Date(); today.setHours(0,0,0,0);
+                    const exp = formData.expiry ? new Date(formData.expiry) : null;
+                    const daysLeft = exp ? Math.ceil((exp.getTime() - today.getTime()) / 86400000) : null;
+                    const auto = daysLeft === null ? 'Aman' : daysLeft < 0 ? 'Expired' : daysLeft <= 7 ? 'Kritis' : daysLeft <= 30 ? 'Warning' : 'Aman';
+                    const colorMap: Record<string, string> = { Expired: 'bg-red-50 text-red-700 border-red-200', Kritis: 'bg-orange-50 text-orange-700 border-orange-200', Warning: 'bg-amber-50 text-amber-700 border-amber-200', Aman: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                    return (
+                      <div className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-bold flex items-center justify-between ${colorMap[auto]}`}>
+                        <span>{auto === 'Aman' ? 'Optimal (Aman)' : auto === 'Warning' ? 'Warning — Mendekati Expired' : auto === 'Kritis' ? 'Kritis — Segera Tindak' : 'Expired — Kedaluwarsa'}</span>
+                        <span className="text-[10px] font-semibold opacity-70">Auto dari tanggal expiry</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Image Upload */}
@@ -909,14 +913,16 @@ export default function InventoryMasterPage() {
         onSave={async (item, data) => {
           setIsUpdateStockOpen(false);
           try {
+            const newLocation = data.location || item.location;
+            const newZone = newLocation !== 'UNASSIGNED' ? newLocation.split('-')[0] : item.zone;
             const payload = {
               id: item.id,
               name: item.name,
               category: item.category,
               qty: item.qty + Number(data.addQty),
               unit: item.unit,
-              location: data.location || item.location,
-              zone: item.zone,
+              location: newLocation,
+              zone: newZone,
               dateIn: data.dateIn,
               expiry: data.expiry,
               status: item.status,
@@ -933,6 +939,16 @@ export default function InventoryMasterPage() {
             triggerToast('Gagal update stock', 'error');
           }
         }}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title="Hapus Item"
+        message={`Hapus "${confirmState.itemName}" dari inventori? Tindakan ini tidak dapat dibatalkan.`}
+        confirmLabel="Hapus"
+        variant="danger"
+        onConfirm={doDeleteItem}
+        onCancel={closeDeleteConfirm}
       />
     </div>
   );

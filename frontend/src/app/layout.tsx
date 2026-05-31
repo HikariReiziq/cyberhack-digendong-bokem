@@ -26,7 +26,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
-      <body className={`${poppins.variable} font-sans antialiased bg-[#D7E5D8] text-[#1C1B1F] min-h-screen relative`}>
+      <body 
+        className={`${poppins.variable} font-sans antialiased bg-[#D7E5D8] text-[#1C1B1F] min-h-screen relative`}
+        suppressHydrationWarning
+      >
         <AuthProvider>
           <ToastProvider>
             {children}

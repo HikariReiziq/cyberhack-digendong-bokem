@@ -8,6 +8,17 @@ import { validate } from '../middleware/validate.js';
 
 const router = Router();
 
+// Normalize role aliases to canonical DB values
+function normalizeRole(r) {
+  if (!r) return 'Operator';
+  const upper = r.toUpperCase();
+  if (upper === 'WAREHOUSE_STAFF' || upper === 'OPERATOR') return 'Operator';
+  if (upper === 'QUALITY_CONTROL' || upper === 'QC') return 'QC';
+  if (upper === 'ADMIN') return 'Admin';
+  if (upper === 'PPIC') return 'PPIC';
+  return 'Operator';
+}
+
 // Allowed roles for registration and user management
 const ALLOWED_ROLES = ['Operator', 'QC', 'Admin', 'PPIC', 'WAREHOUSE_STAFF', 'QUALITY_CONTROL', 'ADMIN'];
 
@@ -92,6 +103,9 @@ router.post('/register', authLimiter, validate(registerValidation), async (req, 
       return res.status(400).json({ success: false, error: `Role tidak valid. Allowed: ${ALLOWED_ROLES.join(', ')}` });
     }
 
+    // Normalize role to canonical DB value (e.g. WAREHOUSE_STAFF → Operator)
+    const normalizedRole = normalizeRole(role);
+
     const checkUser = await pool.query('SELECT * FROM users WHERE email = $1 LIMIT 1', [email]);
     if (checkUser.rows.length > 0) {
       return res.status(400).json({ success: false, error: 'Email sudah terdaftar' });
@@ -101,7 +115,7 @@ router.post('/register', authLimiter, validate(registerValidation), async (req, 
 
     const result = await pool.query(
       'INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING *',
-      [name, email, hashedPassword, role]
+      [name, email, hashedPassword, normalizedRole]
     );
     const user = result.rows[0];
 

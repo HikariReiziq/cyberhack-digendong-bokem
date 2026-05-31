@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth';
 import { useLanguage } from '@/lib/i18n';
 import { callAI } from '@/lib/gemini';
 import { OcrItem, UploadRecord, InventoryItem, createUploadRecord, isDuplicate } from '@/lib/ocr';
+import { api } from '@/lib/api';
 import Portal from '@/components/Portal';
 import {
   Upload as UploadIcon,
@@ -63,41 +64,50 @@ export default function DataIngestionPage() {
   // Duplicate detection state
   const [existingInventory, setExistingInventory] = useState<InventoryItem[]>([]);
 
-  // Load ingestion history from localStorage on mount
+  // Load ingestion history from DB on mount
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('aromasys_ingestion_history');
-      if (stored) {
-        setIngestionHistory(JSON.parse(stored));
-      }
-    } catch {
-      // Ignore parse errors
-    }
-  }, []);
-
-  // Fetch existing inventory for duplicate detection when OCR results change
-  useEffect(() => {
-    if (ocrResult.length === 0) return;
-
-    const fetchInventory = async () => {
-      try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api'}/inventory`,
-          { headers: { 'Authorization': `Bearer ${localStorage.getItem('aromasys_token') || ''}` } }
-        );
-        const data = await res.json();
-        if (data.success && Array.isArray(data.items)) {
-          setExistingInventory(data.items.map((item: { name: string; lot_number?: string; lotNumber?: string }) => ({
-            name: item.name,
-            lotNumber: item.lotNumber || item.lot_number || '',
+    api.get<{ success: boolean; records: any[] }>('/ingestion-history')
+      .then(data => {
+        if (data.success) {
+          setIngestionHistory(data.records.map(r => ({
+            id: r.id,
+            fileName: r.fileName,
+            fileSize: r.fileSize || '',
+            category: r.category || 'OCR Scan',
+            recordCount: r.recordCount || 0,
+            uploadedBy: r.uploadedBy || '',
+            uploadedAt: r.uploadedAt,
+            status: r.status as UploadRecord['status'],
+            notes: r.notes || '',
           })));
         }
-      } catch {
-        // Silently fail — duplicate detection is non-critical
-      }
-    };
+      })
+      .catch(() => {
+        // Fallback ke localStorage jika API gagal
+        try {
+          const stored = localStorage.getItem('aromasys_ingestion_history');
+          if (stored) setIngestionHistory(JSON.parse(stored));
+        } catch {}
+      });
+  }, []);
 
-    fetchInventory();
+  // Fetch existing inventory once when first OCR results arrive (not on every edit)
+  const inventoryFetchedRef = useRef(false);
+  useEffect(() => {
+    if (ocrResult.length === 0) { inventoryFetchedRef.current = false; return; }
+    if (inventoryFetchedRef.current) return; // already fetched for this batch
+    inventoryFetchedRef.current = true;
+
+    api.get<{ success: boolean; items: Array<{ name: string; lotNumber?: string }> }>('/inventory')
+      .then(data => {
+        if (data.success && Array.isArray(data.items)) {
+          setExistingInventory(data.items.map(item => ({
+            name: item.name,
+            lotNumber: item.lotNumber || '',
+          })));
+        }
+      })
+      .catch(() => {}); // non-critical
   }, [ocrResult.length]);
 
   // Processing state
@@ -286,18 +296,35 @@ Return ONLY valid JSON object in this format:
     return { label: ext.toUpperCase(), className: 'upload-queue-badge-csv' };
   }
 
-  // Add files to queue
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+  // Add files to queue with size validation
   const addFilesToQueue = useCallback((files: FileList | File[]) => {
-    const newItems: FileQueueItem[] = Array.from(files).map(f => ({
-      id: `${f.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      file: f,
-      name: f.name,
-      size: f.size,
-      status: 'pending' as const,
-      progress: 0,
-      errorMsg: ''
-    }));
-    setFileQueue(prev => [...prev, ...newItems]);
+    const newItems: FileQueueItem[] = [];
+    const oversized: string[] = [];
+
+    Array.from(files).forEach(f => {
+      if (f.size > MAX_FILE_SIZE) {
+        oversized.push(`${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`);
+        return;
+      }
+      newItems.push({
+        id: `${f.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        file: f,
+        name: f.name,
+        size: f.size,
+        status: 'pending' as const,
+        progress: 0,
+        errorMsg: ''
+      });
+    });
+
+    if (oversized.length > 0) {
+      setError(`File berikut melebihi batas 10MB: ${oversized.join(', ')}`);
+    }
+    if (newItems.length > 0) {
+      setFileQueue(prev => [...prev, ...newItems]);
+    }
   }, []);
 
   // Remove file from queue
@@ -458,7 +485,8 @@ Return ONLY valid JSON object in this format:
   };
 
   const handleSaveEditRow = (index: number) => {
-    if (!editFormData.name || !editFormData.qty) return;
+    if (!editFormData.name?.trim() || !editFormData.qty || Number(editFormData.qty) <= 0 ||
+        !editFormData.category?.trim() || !editFormData.unit?.trim() || !editFormData.expiry) return;
     const updated = [...ocrResult];
     updated[index] = { ...editFormData, qty: Number(editFormData.qty) } as OcrItem;
     setOcrResult(updated);
@@ -479,68 +507,79 @@ Return ONLY valid JSON object in this format:
     setProcessedFileNames([]);
   }
 
+  // Zone assignment by category — single source of truth
+  function getZoneForCategory(cat: string): string {
+    if (['Kimia', 'Pengawet'].includes(cat)) return 'E';
+    if (['Susu', 'Cokelat'].includes(cat)) return 'D';
+    if (['Tepung', 'Gula'].includes(cat)) return 'A';
+    if (['Minyak', 'Pewarna', 'Essence'].includes(cat)) return 'B';
+    return 'C';
+  }
+
   // --- Save to DB ---
   const handleSave = async () => {
+    // Validate all items before starting save
+    const invalidItems = ocrResult.filter(item =>
+      !item.name?.trim() || !item.category?.trim() || !item.unit?.trim() ||
+      !item.qty || Number(item.qty) <= 0 || !item.expiry
+    );
+    if (invalidItems.length > 0) {
+      setError(`${invalidItems.length} item belum lengkap (nama, kategori, qty, unit, dan expiry wajib diisi).`);
+      return;
+    }
+
     try {
       setIsSaving(true);
       setError(null);
 
-      const slotsRes = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api'}/slots`,
-        { headers: { 'Authorization': `Bearer ${localStorage.getItem('aromasys_token') || ''}` } }
-      );
-      const slotsData = await slotsRes.json();
-      const availableSlots = slotsData.success ? slotsData.slots.filter((s: { occupied: boolean }) => !s.occupied) : [];
-
-      function getZoneForCategory(cat: string): string {
-        if (['Kimia', 'Pengawet'].includes(cat)) return 'E';
-        if (['Susu', 'Cokelat'].includes(cat)) return 'D';
-        if (['Tepung', 'Gula'].includes(cat)) return 'A';
-        if (['Minyak', 'Pewarna', 'Essence'].includes(cat)) return 'B';
-        return 'C';
-      }
+      const slotsData = await api.get<{ success: boolean; slots: Array<{ id: string; zone: string; occupied: boolean }> }>('/slots');
+      const availableSlots = slotsData.success ? slotsData.slots.filter(s => !s.occupied) : [];
 
       let savedCount = 0;
+      const failedItems: string[] = [];
+
       for (const item of ocrResult) {
         const zone = getZoneForCategory(item.category);
-        const slot = availableSlots.find((s: { zone: string; occupied: boolean }) => s.zone === zone && !s.occupied)
-          || availableSlots.find((s: { occupied: boolean }) => !s.occupied);
+        const slot = availableSlots.find(s => s.zone === zone && !s.occupied)
+          || availableSlots.find(s => !s.occupied);
         const slotId = slot ? slot.id : null;
         if (slot) slot.occupied = true;
 
-        const nextId = `INV-${String(Date.now()).slice(-6)}${String(savedCount).padStart(2, '0')}`;
+        // Use crypto.randomUUID for guaranteed unique ID
+        const uuid = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+        const nextId = `INV-${uuid}`;
+
+        const defaultExpiry = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const payload = {
           id: nextId,
-          name: item.name,
-          category: item.category,
-          qty: item.qty,
-          unit: item.unit,
+          name: item.name.trim(),
+          category: item.category.trim(),
+          qty: Number(item.qty),
+          unit: item.unit.trim(),
           location: slotId || 'UNASSIGNED',
           zone: slot ? slot.zone : zone,
           dateIn: new Date().toISOString().split('T')[0],
-          expiry: item.expiry || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          status: 'Aman',
+          expiry: item.expiry || defaultExpiry,
           user: { name: user?.name || 'OCR Assistant', role: user?.role || 'Operator' }
         };
 
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api'}/inventory`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('aromasys_token') || ''}`,
-              'x-user-id': String(user?.id || ''),
-              'x-user-role': user?.role || 'Operator'
-            },
-            body: JSON.stringify(payload)
-          }
-        );
-        const data = await res.json();
-        if (data.success) savedCount++;
+        try {
+          const res = await api.post<{ success: boolean }>('/inventory', payload);
+          if (res.success) savedCount++;
+          else failedItems.push(item.name);
+        } catch {
+          failedItems.push(item.name);
+        }
       }
 
-      // Log ingestion history
+      if (failedItems.length > 0 && savedCount === 0) {
+        throw new Error(`Semua item gagal disimpan: ${failedItems.join(', ')}`);
+      }
+      if (failedItems.length > 0) {
+        setError(`${savedCount} item berhasil, ${failedItems.length} gagal: ${failedItems.join(', ')}`);
+      }
+
+      // Log ingestion history ke DB
       const record = createUploadRecord(
         processedFileNames.join(', ') || 'document',
         `${ocrResult.length} items`,
@@ -548,10 +587,18 @@ Return ONLY valid JSON object in this format:
         'OCR Scan',
         user?.name || 'System'
       );
-      const existingHistory = JSON.parse(localStorage.getItem('aromasys_ingestion_history') || '[]');
-      const updatedHistory = [record, ...existingHistory];
-      localStorage.setItem('aromasys_ingestion_history', JSON.stringify(updatedHistory));
-      setIngestionHistory(updatedHistory);
+      await api.post('/ingestion-history', {
+        id: record.id,
+        fileName: record.fileName,
+        fileSize: record.fileSize,
+        category: record.category,
+        recordCount: record.recordCount,
+        uploadedBy: record.uploadedBy,
+        uploadedAt: record.uploadedAt,
+        status: record.status,
+        notes: record.notes,
+      }).catch(() => {});
+      setIngestionHistory(prev => [record, ...prev]);
 
       setSaved(true);
     } catch (err: unknown) {
@@ -564,9 +611,8 @@ Return ONLY valid JSON object in this format:
 
   // Delete a record from ingestion history
   const handleDeleteHistory = (recordId: string) => {
-    const updated = ingestionHistory.filter(r => r.id !== recordId);
-    setIngestionHistory(updated);
-    localStorage.setItem('aromasys_ingestion_history', JSON.stringify(updated));
+    setIngestionHistory(prev => prev.filter(r => r.id !== recordId));
+    api.delete(`/ingestion-history/${recordId}`).catch(() => {});
   };
 
   // Check if any file is currently processing

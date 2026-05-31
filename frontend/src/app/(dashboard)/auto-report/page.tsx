@@ -24,12 +24,15 @@ import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
 import { callAI } from "@/lib/gemini";
 import type { InventoryItem, Slot, AuditLog } from "@/types";
+import Portal from "@/components/Portal";
 
 function getDaysLeft(expiryDateStr: string): number {
-  const expiry = new Date(expiryDateStr);
-  const today = new Date();
-  const diffTime = expiry.getTime() - today.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  // Parse both as UTC midnight to avoid timezone offset shifting the day boundary
+  const [ey, em, ed] = expiryDateStr.split('-').map(Number);
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const expiryUtc = Date.UTC(ey, em - 1, ed);
+  return Math.ceil((expiryUtc - todayUtc) / (1000 * 60 * 60 * 24));
 }
 
 /** Simple markdown to HTML renderer supporting bold, italic, lists, headers, and tables */
@@ -130,6 +133,7 @@ export default function AutoReportPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState(0);
   const [generationSuccess, setGenerationSuccess] = useState(false);
+  const [shareToast, setShareToast] = useState(false);
 
   const steps = [
     "Menghubungkan ke secure database AromaSys...",
@@ -171,7 +175,12 @@ export default function AutoReportPage() {
       try {
         const tempRes = await api.get<any>('/cold-chain');
         if (tempRes.temperatures) {
-          temperatures = tempRes.temperatures;
+          // Extract temperature values from objects to prevent type mismatches
+          Object.keys(tempRes.temperatures).forEach(zone => {
+            temperatures[zone] = tempRes.temperatures[zone].map((r: any) => 
+              typeof r === 'number' ? r : (r && typeof r.temperature === 'number' ? r.temperature : 23)
+            );
+          });
         }
       } catch {
         // Fallback: use mock temps if API fails
@@ -965,6 +974,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
       {/* GENERATION MODAL */}
       <AnimatePresence>
         {isGenerating && (
+          <Portal>
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
@@ -997,12 +1007,14 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
               </div>
             </motion.div>
           </div>
+          </Portal>
         )}
       </AnimatePresence>
 
       {/* SUCCESS MODAL */}
       <AnimatePresence>
         {generationSuccess && (
+          <Portal>
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
@@ -1054,7 +1066,10 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
 
                   <button
                     onClick={() => {
-                      alert(`Tautan dokumen disalin ke papan klip!`);
+                      const url = window.location.href;
+                      navigator.clipboard?.writeText(url).catch(() => {});
+                      setShareToast(true);
+                      setTimeout(() => setShareToast(false), 3000);
                       setGenerationSuccess(false);
                     }}
                     className="py-2.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-700 rounded-full flex items-center justify-center gap-2 font-bold text-xs active:scale-95 transition-all outline-none"
@@ -1066,6 +1081,22 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
               </div>
             </motion.div>
           </div>
+          </Portal>
+        )}
+      </AnimatePresence>
+
+      {/* Share toast */}
+      <AnimatePresence>
+        {shareToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 bg-[#2C742F] text-white rounded-xl shadow-xl text-xs font-bold"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            Tautan laporan disalin ke papan klip!
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

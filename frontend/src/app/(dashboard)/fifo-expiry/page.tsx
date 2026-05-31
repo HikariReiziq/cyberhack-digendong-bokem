@@ -19,10 +19,12 @@ import { api } from "@/lib/api";
 import type { InventoryItem } from "@/types";
 
 function getDaysLeft(expiryDateStr: string): number {
-  const expiry = new Date(expiryDateStr);
-  const today = new Date();
-  const diffTime = expiry.getTime() - today.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  // Parse both as UTC midnight to avoid timezone offset shifting the day boundary
+  const [ey, em, ed] = expiryDateStr.split('-').map(Number);
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const expiryUtc = Date.UTC(ey, em - 1, ed);
+  return Math.ceil((expiryUtc - todayUtc) / (1000 * 60 * 60 * 24));
 }
 
 function getCategoryIcon(category: string) {
@@ -87,7 +89,8 @@ export default function FifoExpiryPage() {
     return inventory.map(item => {
       const days = getDaysLeft(item.expiry);
       let status: "Critical" | "Monitor" | "Optimal" = "Optimal";
-      let progress = 20;
+      // Progress bar: proportional — 0 days = 100%, 30+ days = ~10%, capped at 100
+      const progress = days <= 0 ? 100 : Math.max(8, Math.min(95, Math.round((1 - days / 60) * 100)));
       let progressColor = "bg-[#BCF389]";
       let daysColor = "text-lime-800";
       let badgeStyle = "bg-green-100/20 text-lime-800 border-lime-800/20";
@@ -96,15 +99,20 @@ export default function FifoExpiryPage() {
 
       if (days < 0 || item.status === 'Expired') {
         status = "Critical";
-        progress = 100;
         progressColor = "bg-[#BA1A1A]";
         daysColor = "text-red-700 font-bold";
         badgeStyle = "bg-rose-200 text-red-800 border-red-700/20";
         dotBg = "bg-red-700 animate-pulse";
         actionText = "Expired";
+      } else if (days === 0) {
+        status = "Critical";
+        progressColor = "bg-[#BA1A1A]";
+        daysColor = "text-red-700 font-bold";
+        badgeStyle = "bg-rose-200 text-red-800 border-red-700/20";
+        dotBg = "bg-red-700 animate-pulse";
+        actionText = "Kadaluwarsa Hari Ini";
       } else if (days <= 7 || item.status === 'Kritis') {
         status = "Critical";
-        progress = 90;
         progressColor = "bg-[#BA1A1A]";
         daysColor = "text-red-700 font-bold";
         badgeStyle = "bg-rose-200/50 text-red-800 border-red-700/20";
@@ -112,7 +120,6 @@ export default function FifoExpiryPage() {
         actionText = "Tindakan Segera";
       } else if (days <= 30 || item.status === 'Warning') {
         status = "Monitor";
-        progress = 65;
         progressColor = "bg-black";
         daysColor = "text-zinc-950";
         badgeStyle = "bg-stone-100 text-stone-500 border-stone-500/30";
@@ -120,8 +127,10 @@ export default function FifoExpiryPage() {
         actionText = "Jadwal Penggunaan";
       }
 
-      const daysText = days < 0 
-        ? `Expired (${Math.abs(days)} hari lalu)` 
+      const daysText = days < 0
+        ? `Expired (${Math.abs(days)} hari lalu)`
+        : days === 0
+        ? 'Kadaluwarsa Hari Ini'
         : `${days} Hari Tersisa`;
 
       const intakeFormatted = new Date(item.dateIn).toLocaleDateString('en-US', {
@@ -134,12 +143,15 @@ export default function FifoExpiryPage() {
         id: item.id,
         material: item.name,
         lot: item.id,
+        qty: item.qty,
+        unit: item.unit,
         intakeDate: intakeFormatted,
         intakeTime: new Date(item.dateIn).getTime(),
         location: item.location || "UNASSIGNED",
         zone: item.zone || "",
         category: item.category || "",
-        status,
+        dbStatus: item.status,      // original DB value (Aman/Warning/Kritis/Expired)
+        status,                     // mapped display value (Critical/Monitor/Optimal)
         daysLeft: days,
         daysText,
         actionText,
@@ -189,10 +201,14 @@ export default function FifoExpiryPage() {
   // Real CSV spreadsheet exporter and trigger download
   function handleExport() {
     let csvContent = "\uFEFF"; // UTF-8 BOM
-    csvContent += "ID,Nama Bahan,Kategori,Lokasi,Tgl Masuk,Sisa Hari,Status\n";
+    csvContent += "ID,Nama Bahan,Kategori,Qty,Unit,Lokasi,Zona,Tgl Masuk,Sisa Hari,Status\n";
     sortedItems.forEach(item => {
-      const daysText = item.daysLeft < 0 ? `${Math.abs(item.daysLeft)} hari lalu` : `${item.daysLeft} hari`;
-      csvContent += `"${item.id}","${item.material}","${item.category}","${item.location}","${item.intakeDate}","${daysText}","${item.status}"\n`;
+      const daysText = item.daysLeft < 0
+        ? `Expired (${Math.abs(item.daysLeft)} hari lalu)`
+        : item.daysLeft === 0 ? 'Kadaluwarsa Hari Ini'
+        : `${item.daysLeft} hari`;
+      // Use DB status (Aman/Warning/Kritis/Expired) for export consistency
+      csvContent += `"${item.id}","${item.material}","${item.category}","${item.qty}","${item.unit}","${item.location}","${item.zone}","${item.intakeDate}","${daysText}","${item.dbStatus}"\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -212,6 +228,17 @@ export default function FifoExpiryPage() {
   }, [sortedItems, currentPage]);
 
   const totalPages = Math.ceil(sortedItems.length / itemsPerPage) || 1;
+
+  // Dynamic zones and categories from actual data
+  const availableZones = useMemo(() => {
+    const zones = [...new Set(inventory.map(i => i.zone).filter(Boolean))].sort();
+    return zones;
+  }, [inventory]);
+
+  const availableCategories = useMemo(() => {
+    const cats = [...new Set(inventory.map(i => i.category).filter(Boolean))].sort();
+    return cats;
+  }, [inventory]);
 
   if (isLoading) {
     return (
@@ -324,7 +351,7 @@ export default function FifoExpiryPage() {
               </AnimatePresence>
             </div>
 
-            {/* Zone Filter */}
+            {/* Zone Filter — dynamic from data */}
             <select
               className="px-3.5 py-2 rounded-lg border border-stone-300/60 bg-white text-stone-700 hover:bg-stone-50 transition-all text-sm font-semibold focus:outline-none cursor-pointer"
               value={selectedZone}
@@ -332,10 +359,10 @@ export default function FifoExpiryPage() {
               aria-label="Filter by zone"
             >
               <option value="">Semua Zona</option>
-              {["A", "B", "C", "D", "E"].map(z => <option key={z} value={z}>Zona {z}</option>)}
+              {availableZones.map(z => <option key={z} value={z}>Zona {z}</option>)}
             </select>
 
-            {/* Category Filter */}
+            {/* Category Filter — dynamic from data */}
             <select
               className="px-3.5 py-2 rounded-lg border border-stone-300/60 bg-white text-stone-700 hover:bg-stone-50 transition-all text-sm font-semibold focus:outline-none cursor-pointer"
               value={selectedCategory}
@@ -343,14 +370,24 @@ export default function FifoExpiryPage() {
               aria-label="Filter by category"
             >
               <option value="">Semua Kategori</option>
-              {["Tepung", "Gula", "Minyak", "Pewarna", "Essence", "Pengawet", "Susu", "Cokelat", "Rempah", "Kimia"].map(c => <option key={c} value={c}>{c}</option>)}
+              {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
  
           {/* Right Controls: Sort Indicator & Dropdown */}
           <div className="flex items-center gap-3 relative">
             
-            {/* Export Excel Button */}
+            {/* Refresh Button */}
+            <button
+              onClick={() => fetchInventory()}
+              className="px-3.5 py-2 rounded-lg border border-stone-300/60 bg-white hover:bg-stone-50 text-stone-700 flex items-center gap-2 text-sm font-bold active:scale-95 transition-all outline-none focus:outline-none shrink-0"
+              title="Refresh data dari database"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              <span>Refresh</span>
+            </button>
+
+            {/* Export CSV Button */}
             <button
               onClick={handleExport}
               disabled={sortedItems.length === 0}

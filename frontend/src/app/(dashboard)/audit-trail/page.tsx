@@ -74,10 +74,12 @@ export default function AuditTrailPage() {
         (log.module || "").toLowerCase().includes(searchQuery.toLowerCase());
 
       // Role filter
-      const matchesRole = selectedRole === "All Roles" || log.role === selectedRole;
+      const matchesRole = selectedRole === "All Roles" || 
+        (log.role || "").toLowerCase() === selectedRole.toLowerCase();
       
       // Module filter
-      const matchesModule = selectedModule === "All Modules" || log.module === selectedModule;
+      const matchesModule = selectedModule === "All Modules" || 
+        (log.module || "").toLowerCase() === selectedModule.toLowerCase();
 
       // Date range filter
       let matchesDate = true;
@@ -113,13 +115,25 @@ export default function AuditTrailPage() {
   }, [filteredLogs.length, totalPages, currentPage]);
 
   const rolesList = ["All Roles", "Operator", "QC", "PPIC", "Admin"];
-  const modulesList = ["All Modules", "Dashboard", "Cold Storage", "FIFO", "Digital Twin", "Settings", "System"];
+  const modulesList = ["All Modules", "Auth", "Inventory", "QC", "Cold Chain", "Digital Twin", "Copilot", "User Management", "Settings", "System"];
 
   if (isLoading && logs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
         <div className="w-10 h-10 border-4 border-[#2C742F] border-t-transparent rounded-full animate-spin" />
         <p className="text-sm text-stone-500 font-semibold">{t('loadingLogs')}</p>
+      </div>
+    );
+  }
+
+  if (error && logs.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4 text-center">
+        <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-red-600 font-extrabold text-xl">!</div>
+        <p className="text-sm font-bold text-neutral-800">{error}</p>
+        <button onClick={fetchLogs} className="px-5 py-2 rounded-full bg-[#2C742F] text-white font-bold text-xs hover:bg-[#366306] transition-all">
+          Coba Lagi
+        </button>
       </div>
     );
   }

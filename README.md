@@ -105,44 +105,29 @@ Buka [http://localhost:3000](http://localhost:3000)
 ## 📁 Struktur Project
 
 ```
-src/
-├── app/
-│   ├── (dashboard)/          # Dashboard layout group
-│   │   ├── dashboard/        # Halaman dashboard utama
-│   │   ├── digital-twin/     # Floor Plan, FIFO, Cold-Chain
-│   │   ├── copilot/          # Chat, Upload, Report
-│   │   ├── settings/         # Profile, Inventory, Audit, Notifications
-│   │   ├── layout.js         # Dashboard layout + topbar + sidebar
-│   │   ├── loading.js        # Loading state
-│   │   └── error.js          # Error boundary
-│   ├── api/                  # API Routes
-│   │   ├── auth/             # Login & Register
-│   │   ├── inventory/        # CRUD Inventory
-│   │   ├── slots/            # Warehouse slots
-│   │   ├── cold-chain/       # Temperature data
-│   │   ├── dashboard/stats/  # Dashboard statistics
-│   │   ├── audit/            # Audit logs
-│   │   ├── profile/          # User profile
-│   │   ├── maintenance/      # Maintenance tickets
-│   │   └── floor-plan-upload/ # Floor plan upload
-│   ├── login/                # Login page
-│   ├── register/             # Register page
-│   ├── page.js               # Landing page
-│   ├── layout.js             # Root layout
-│   └── not-found.js          # 404 page
-├── components/
-│   ├── Sidebar.js            # Navigation sidebar
-│   ├── ChatbotOverlay.js     # AI Chatbot modal
-│   └── ErrorBoundary.js      # Error boundary component
-├── lib/
-│   ├── auth.js               # Auth context & RBAC
-│   ├── db.js                 # Database connection pool
-│   ├── notifications.js      # Notification context
-│   ├── authMiddleware.js     # Server-side auth helpers
-│   └── mockData.js           # Constants & seed data reference
-├── middleware.js              # Security headers
-scripts/
-└── init-db.js                # Database initialization & seeding
+cyberhack-digendong-bokem/
+├── backend/                  # REST API Backend (Express.js)
+│   ├── src/
+│   │   ├── routes/           # API Routers (auth, qc, inventory, slots, etc.)
+│   │   ├── middleware/       # Auth & validation middlewares
+│   │   ├── lib/              # Database connection pool
+│   │   └── server.js         # Entry point
+│   ├── scripts/              # DB Init & Seed scripts
+│   └── package.json          
+├── frontend/                 # Next.js 16 Web Application
+│   ├── public/               # Static assets & media
+│   ├── src/
+│   │   ├── app/              # Next.js App Router layout/pages
+│   │   │   ├── (auth)/       # Authentication pages (login/register)
+│   │   │   ├── (dashboard)/  # Dashboard pages (overview, floor-plan, qc, dsb.)
+│   │   │   ├── layout.tsx    
+│   │   │   └── page.tsx      # Landing page
+│   │   ├── components/       # Shared UI components
+│   │   ├── lib/              # Client utilities (api connection, auth, i18n)
+│   │   └── types/            # TypeScript interfaces
+│   └── package.json
+├── package.json              # Workspace root configuration
+└── README.md
 ```
 
 ---
@@ -176,24 +161,34 @@ scripts/
 | GET/PUT | /api/profile | Public | User profile |
 | POST | /api/maintenance | Auth | Create maintenance ticket |
 | POST | /api/floor-plan-upload | Auth | Upload floor plan |
+| POST | /api/qc/analyze | Auth | Analyze material quality using Roboflow models |
+| POST | /api/qc/inspect | Auth | Save quality control result manually |
+| GET | /api/qc/history | Auth | Retrieve quality control history |
 
 ---
 
 ## 🏗️ Build & Deploy
 
 ```bash
-# Build for production
+# Jalankan development server (frontend & backend secara bersamaan)
+npm run dev
+
+# Build untuk produksi
 npm run build
 
-# Start production server
+# Jalankan server produksi
 npm start
 ```
 
 ---
 
-## 👥 Tim
+## 👥 Anggota Tim
 
-**Hackathon Team: Hikari, Arya, Icaz + AI Antigravity**
+**Teknologi Informasi (Information Technology):**
+* **ARYA BISMA PUTRA REFMAN**
+* **ICA ZIKA HAMIZAH**
+* **M. HIKARI REIZIQ R.**
+* **AHMAD RAFI FADHILLAH D**
 
 ---
 

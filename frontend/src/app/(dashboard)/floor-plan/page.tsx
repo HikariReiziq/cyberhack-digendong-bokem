@@ -8,7 +8,8 @@ import {
   Flame, AlertTriangle, Upload, ImageIcon,
   Droplet, Lock, ArrowRightLeft, Bot,
   FileUp, Check,
-  RefreshCw, ArrowUpRight, Undo2, RotateCcw
+  RefreshCw, ArrowUpRight, Undo2, RotateCcw,
+  Eye, EyeOff
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { callAI } from '@/lib/gemini';
@@ -29,6 +30,7 @@ import {
 import ZoneDetailsModal from './ZoneDetailsModal';
 import AIRecommendationPanel, { type AIRecommendation } from './AIRecommendationPanel';
 import Portal from '@/components/Portal';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import type { Slot, InventoryItem } from '@/types';
 
 interface DragState {
@@ -74,7 +76,7 @@ interface Floor {
 }
 
 export default function FloorPlanPage() {
-  const { user, canEdit, canDelete } = useAuth();
+  const { user, canEdit, canDelete, isAdmin } = useAuth();
   const { t } = useLanguage();
   const [slots, setSlots] = useState<Slot[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
@@ -90,6 +92,7 @@ export default function FloorPlanPage() {
   const [assignItemId, setAssignItemId] = useState('');
   const [customFloorPlan, setCustomFloorPlan] = useState<CustomFloorPlan | null>(null);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
+  const [showBlueprintImage, setShowBlueprintImage] = useState(true);
   
   // Custom floors states
   const [floors, setFloors] = useState<Floor[]>([]);
@@ -121,6 +124,15 @@ export default function FloorPlanPage() {
     humidApiUrl: ''
   });
   
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean; title: string; message: string; confirmLabel: string; variant: 'danger' | 'warning'; onConfirm: () => void;
+  }>({ isOpen: false, title: '', message: '', confirmLabel: 'Hapus', variant: 'danger', onConfirm: () => {} });
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void, confirmLabel = 'Hapus', variant: 'danger' | 'warning' = 'danger') => {
+    setConfirmState({ isOpen: true, title, message, confirmLabel, variant, onConfirm });
+  };
+  const closeConfirm = () => setConfirmState(s => ({ ...s, isOpen: false }));
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -290,6 +302,7 @@ export default function FloorPlanPage() {
     setFloors(prevFloors => {
       const updated = prevFloors.map(f => f.id === activeFloorId ? { ...f, customFloorPlan: newPlan } : f);
       localStorage.setItem('aromasys_floors', JSON.stringify(updated));
+      syncZonesToDB(updated);
       return updated;
     });
   };
@@ -307,8 +320,9 @@ export default function FloorPlanPage() {
     const updated = [...floors, newFloor];
     setFloors(updated);
     localStorage.setItem('aromasys_floors', JSON.stringify(updated));
-    setActiveFloorId(newFloorId);
     localStorage.setItem('aromasys_active_floor_id', newFloorId);
+    setActiveFloorId(newFloorId);
+    syncZonesToDB(updated);
     setToast(`Layout baru "${newFloorName}" berhasil ditambahkan.`);
   };
 
@@ -321,6 +335,7 @@ export default function FloorPlanPage() {
     const updated = floors.map(f => f.id === floorId ? { ...f, name: editFloorNameInput.trim() } : f);
     setFloors(updated);
     localStorage.setItem('aromasys_floors', JSON.stringify(updated));
+    syncZonesToDB(updated);
     setEditingFloorId(null);
     setToast('Nama layout berhasil diperbarui.');
   };
@@ -330,18 +345,23 @@ export default function FloorPlanPage() {
       setToast('Gagal menghapus. Minimal harus ada 1 layout.');
       return;
     }
-    if (!confirm(`Apakah Anda yakin ingin menghapus layout "${floorName}" beserta seluruh zonanya?`)) return;
-
-    const updated = floors.filter(f => f.id !== floorId);
-    setFloors(updated);
-    localStorage.setItem('aromasys_floors', JSON.stringify(updated));
-
-    if (activeFloorId === floorId) {
-      const nextActiveId = updated[0].id;
-      setActiveFloorId(nextActiveId);
-      localStorage.setItem('aromasys_active_floor_id', nextActiveId);
-    }
-    setToast(`Layout "${floorName}" telah dihapus.`);
+    showConfirm(
+      'Hapus Layout',
+      `Apakah Anda yakin ingin menghapus layout "${floorName}" beserta seluruh zonanya?`,
+      () => {
+        closeConfirm();
+        const updated = floors.filter(f => f.id !== floorId);
+        setFloors(updated);
+        localStorage.setItem('aromasys_floors', JSON.stringify(updated));
+        if (activeFloorId === floorId) {
+          const nextActiveId = updated[0].id;
+          setActiveFloorId(nextActiveId);
+          localStorage.setItem('aromasys_active_floor_id', nextActiveId);
+        }
+        syncZonesToDB(updated);
+        setToast(`Layout "${floorName}" telah dihapus.`);
+      }
+    );
   };
 
   // Fetch slots and inventory from backend API
@@ -468,6 +488,7 @@ export default function FloorPlanPage() {
         setFloors(prevFloors => {
           const updated = prevFloors.map(f => f.id === activeFloorId ? { ...f, interactiveZones: prev } : f);
           localStorage.setItem('aromasys_floors', JSON.stringify(updated));
+          syncZonesToDB(updated);
           return updated;
         });
         return prev;
@@ -504,13 +525,18 @@ export default function FloorPlanPage() {
 
   function deleteZone(id: string) {
     const zone = interactiveZones.find(z => z.id === id);
-    const zoneName = zone?.name || 'this zone';
-    if (!confirm(`Are you sure you want to delete "${zoneName}"? This action cannot be undone.`)) return;
-    // Save undo state
-    setUndoHistory(prev => [...prev, interactiveZones]);
-    const updated = interactiveZones.filter(z => z.id !== id);
-    updateActiveFloorZones(updated);
-    setToast('Zone deleted.');
+    const zoneName = zone?.name || 'zona ini';
+    showConfirm(
+      'Hapus Zona',
+      `Apakah Anda yakin ingin menghapus "${zoneName}"? Tindakan ini tidak dapat dibatalkan.`,
+      () => {
+        closeConfirm();
+        setUndoHistory(prev => [...prev, interactiveZones]);
+        const updated = interactiveZones.filter(z => z.id !== id);
+        updateActiveFloorZones(updated);
+        setToast('Zone deleted.');
+      }
+    );
   }
 
   function undoLastAction() {
@@ -577,18 +603,33 @@ export default function FloorPlanPage() {
     setZoneMaterials(zoneMaterials.filter(m => m.id !== materialId));
   };
 
-  // Default rooms list filtering
+  // Default rooms list filtering — removes from both interactiveZones and the deleted list
   function handleDeleteDefaultZone(zoneId: string) {
-    const updated = [...deletedDefaultZones, zoneId];
-    setDeletedDefaultZones(updated);
-    localStorage.setItem(STORAGE_KEYS.DELETED_DEFAULT_ZONES, JSON.stringify(updated));
+    const updatedDeleted = [...deletedDefaultZones, zoneId];
+    setDeletedDefaultZones(updatedDeleted);
+    localStorage.setItem(STORAGE_KEYS.DELETED_DEFAULT_ZONES, JSON.stringify(updatedDeleted));
+    // Also remove from active zones so it disappears immediately
+    const updatedZones = interactiveZones.filter(z => z.id !== zoneId);
+    updateActiveFloorZones(updatedZones);
     setSelectedSlotPopup(false);
     setSelectedSlotId(null);
-    setToast('Room hidden from layout.');
+    setToast('Room dihapus dari layout.');
   }
 
   const resetToDefault = () => {
-    if (!confirm('Apakah Anda yakin ingin mengatur ulang semua layout dan zona ke default? Semua perubahan kustom Anda akan hilang.')) return;
+    showConfirm(
+      'Reset ke Default',
+      'Apakah Anda yakin ingin mengatur ulang semua layout dan zona ke default? Semua perubahan kustom Anda akan hilang.',
+      () => {
+        closeConfirm();
+        doReset();
+      },
+      'Reset',
+      'warning'
+    );
+  };
+
+  const doReset = () => {
     localStorage.removeItem(STORAGE_KEYS.DELETED_DEFAULT_ZONES);
     localStorage.removeItem('aromasys_applied_recommendations');
     setDeletedDefaultZones([]);
@@ -611,34 +652,31 @@ export default function FloorPlanPage() {
     setToast('Semua layout telah diatur ulang ke default.');
   };
 
-  // Sync database slots/inventory items to all interactive zones (both default rooms and custom zones)
+  // Sync database inventory items to all interactive zones
   useEffect(() => {
     if (inventoryItems.length === 0 || interactiveZones.length === 0) return;
 
     let changed = false;
     const updatedZones = interactiveZones.map(z => {
-      // Find all database items assigned to this zone ID
-      const dbMaterials = inventoryItems.filter(i => i.location === z.id);
-      
-      const currentMaterials = z.materials || [];
+      const dbMaterials = inventoryItems.filter(i => String(i.location) === String(z.id));
       const dbMappedMaterials = dbMaterials.map(match => ({
-        id: match.id,
+        id: String(match.id),
         name: match.name,
         qty: match.qty,
         unit: match.unit,
         maxCapacity: 500
       }));
 
-      // Compare to see if there is any difference
-      const isDifferent = currentMaterials.length !== dbMappedMaterials.length ||
-        currentMaterials.some((m, idx) => m.id !== dbMappedMaterials[idx]?.id || m.qty !== dbMappedMaterials[idx]?.qty);
+      const currentMaterials = z.materials || [];
+      // Order-independent comparison using Sets of IDs + qty check
+      const currentSet = new Map(currentMaterials.map(m => [String(m.id), m.qty]));
+      const dbSet = new Map(dbMappedMaterials.map(m => [String(m.id), m.qty]));
+      const isDifferent = currentSet.size !== dbSet.size ||
+        [...dbSet.entries()].some(([id, qty]) => currentSet.get(id) !== qty);
 
       if (isDifferent) {
         changed = true;
-        return {
-          ...z,
-          materials: dbMappedMaterials
-        };
+        return { ...z, materials: dbMappedMaterials };
       }
       return z;
     });
@@ -780,6 +818,26 @@ export default function FloorPlanPage() {
         )}
 
         {renderRoomIcon(zone.iconType)}
+
+        {/* Inline Edit/Delete for all zones */}
+        {canEdit() && (
+          <div className="flex gap-1 mt-1" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+            <button
+              onClick={() => handleEditZoneClick(zone)}
+              className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[8px] font-bold hover:bg-blue-700 transition-colors"
+              title="Edit zone"
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => deleteZone(zone.id)}
+              className="p-0.5 bg-red-100 text-[#EA4B48] rounded hover:bg-red-200 transition-colors"
+              title="Hapus zone"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
 
         {/* Drag/Resize Handles */}
         {canEdit() && (
@@ -949,16 +1007,15 @@ export default function FloorPlanPage() {
 
   // Get inventory items that aren't assigned to any slot
   const getAvailableInventory = () => {
-    const assignedIds = new Set<string>();
-    slots.forEach(s => {
-      if (s.itemId) assignedIds.add(s.itemId);
-    });
-    interactiveZones.forEach(z => {
-      if (z.materials) {
-        z.materials.forEach(m => assignedIds.add(m.id));
-      }
-    });
-    return inventoryItems.filter(item => !assignedIds.has(item.id));
+    // Only exclude items already inside THIS zone, so items in other zones can still be reassigned
+    const currentZoneIds = new Set<string>();
+    if (selectedSlotId) {
+      const zone = interactiveZones.find(z => z.id === selectedSlotId);
+      (zone?.materials ?? []).forEach(m => currentZoneIds.add(String(m.id)));
+      const slot = slots.find(s => s.id === selectedSlotId);
+      if (slot?.itemId) currentZoneIds.add(String(slot.itemId));
+    }
+    return inventoryItems.filter(item => !currentZoneIds.has(String(item.id)));
   };
 
   // Add Item to Slot database handler
@@ -970,7 +1027,7 @@ export default function FloorPlanPage() {
       return;
     }
 
-    const invItem = inventoryItems.find(i => i.id === addData.selectedLotId);
+    const invItem = inventoryItems.find(i => String(i.id) === String(addData.selectedLotId));
     if (!invItem) return;
 
     try {
@@ -1033,53 +1090,41 @@ export default function FloorPlanPage() {
   };
 
   // Delete Item from Slot database handler
-  const handleDeleteItem = async (itemId: string, itemName: string) => {
+  const handleDeleteItem = (itemId: string, itemName: string) => {
     if (!canEdit()) return;
-    if (confirm(`Apakah Anda yakin ingin menghapus "${itemName}" dari slot ini?`)) {
-      try {
-        if (selectedSlot?.isCustom) {
-          const invItem = inventoryItems.find(i => i.id === itemId);
-          if (invItem) {
-            await api.put('/inventory', {
-              id: invItem.id,
-              name: invItem.name,
-              category: invItem.category,
-              qty: invItem.qty,
-              unit: invItem.unit,
-              location: 'UNASSIGNED',
-              zone: 'C',
-              dateIn: (invItem as any).dateIn || new Date().toISOString().split('T')[0],
-              expiry: (invItem as any).expiry || new Date().toISOString().split('T')[0],
-              status: (invItem as any).status || 'Aman',
-              user: { name: user?.name || 'Admin', role: user?.role || 'Admin' }
-            });
-          }
-
-          const updated = interactiveZones.map(z => {
-            if (z.id === selectedSlotId) {
-              return {
-                ...z,
-                materials: (z.materials ?? []).filter(m => m.id !== itemId)
-              };
+    showConfirm(
+      'Hapus Material',
+      `Hapus "${itemName}" dari slot ini?`,
+      () => {
+        closeConfirm();
+        (async () => {
+          try {
+            if (selectedSlot?.isCustom) {
+              const invItem = inventoryItems.find(i => i.id === itemId);
+              if (invItem) {
+                await api.put('/inventory', {
+                  id: invItem.id, name: invItem.name, category: invItem.category,
+                  qty: invItem.qty, unit: invItem.unit, location: 'UNASSIGNED', zone: 'C',
+                  dateIn: (invItem as any).dateIn || new Date().toISOString().split('T')[0],
+                  expiry: (invItem as any).expiry || new Date().toISOString().split('T')[0],
+                  status: (invItem as any).status || 'Aman',
+                  user: { name: user?.name || 'Admin', role: user?.role || 'Admin' }
+                });
+              }
+              const updated = interactiveZones.map(z =>
+                z.id === selectedSlotId ? { ...z, materials: (z.materials ?? []).filter(m => m.id !== itemId) } : z
+              );
+              updateActiveFloorZones(updated);
+              setToast(`Material ${itemName} dihapus dari slot.`);
+              fetchInventory();
+            } else {
+              const res = await api.delete<{ success: boolean }>(`/inventory?id=${itemId}&userName=${encodeURIComponent(user?.name ?? 'Admin')}&userRole=${encodeURIComponent(user?.role ?? 'Admin')}`);
+              if (res.success) { fetchSlots(); fetchInventory(); setToast(`Material ${itemName} dihapus.`); }
             }
-            return z;
-          });
-          updateActiveFloorZones(updated);
-          setToast(`Material ${itemName} dihapus dari slot.`);
-          fetchInventory();
-        } else {
-          // Delete from database
-          const res = await api.delete<{ success: boolean }>(`/inventory?id=${itemId}&userName=${encodeURIComponent(user?.name ?? 'Admin')}&userRole=${encodeURIComponent(user?.role ?? 'Admin')}`);
-          if (res.success) {
-            fetchSlots();
-            fetchInventory();
-            setToast(`Material ${itemName} dihapus.`);
-          }
-        }
-      } catch {
-        setToast('Gagal menghapus material.');
+          } catch { setToast('Gagal menghapus material.'); }
+        })();
       }
-    }
+    );
   };
 
   // Image Drag & Drop Handlers
@@ -1301,15 +1346,19 @@ export default function FloorPlanPage() {
           <p className="text-xs text-stone-500 mt-1 font-semibold">{t('floorPlanSub')}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowUploadPanel(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 bg-white text-xs font-bold text-stone-700 hover:bg-stone-50 transition-all shadow-sm active:scale-95">
-            <Upload className="w-4 h-4 text-stone-500" /> {t('uploadPlan')}
-          </button>
-          <button onClick={resetToDefault}
-            className="flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 bg-white text-xs font-bold text-stone-750 hover:bg-stone-50 transition-all shadow-sm active:scale-95"
-            title="Reset layout ke default">
-            <RotateCcw className="w-4 h-4 text-stone-500" /> {t('backToDefault')}
-          </button>
+          {canEdit() && (
+            <button onClick={() => setShowUploadPanel(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 bg-white text-xs font-bold text-stone-700 hover:bg-stone-50 transition-all shadow-sm active:scale-95">
+              <Upload className="w-4 h-4 text-stone-500" /> {t('uploadPlan')}
+            </button>
+          )}
+          {isAdmin() && (
+            <button onClick={resetToDefault}
+              className="flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 bg-white text-xs font-bold text-stone-750 hover:bg-stone-50 transition-all shadow-sm active:scale-95"
+              title="Reset layout ke default">
+              <RotateCcw className="w-4 h-4 text-stone-500" /> {t('backToDefault')}
+            </button>
+          )}
           {canEdit() && (
             <>
               <button onClick={undoLastAction} disabled={undoHistory.length === 0}
@@ -1418,7 +1467,7 @@ export default function FloorPlanPage() {
       </div>
 
       {/* Floor Plan Display Card */}
-      <div className="bg-[#F5FBF3] rounded-2xl border border-[#AAE970]/10 shadow-[6px_6px_54px_rgba(0,0,0,0.04)] p-4 relative">
+      <div className="bg-[#F5FBF3] rounded-2xl border border-[#AAE970]/10 shadow-[6px_6px_54px_rgba(0,0,0,0.04)] p-4 space-y-3 relative">
         {isLoading ? (
           <div className="flex items-center justify-center min-h-[360px] gap-3 flex-col">
             <div className="w-10 h-10 border-4 border-[#2C742F] border-t-transparent rounded-full animate-spin" />
@@ -1426,44 +1475,69 @@ export default function FloorPlanPage() {
           </div>
         ) : (
           <>
-            {/* 1. Custom Blueprint + Overlaid Interactive Zones */}
-            {customFloorPlan && customFloorPlan.imageDataUrl ? (
-              <div className="relative w-full border border-stone-200 rounded-xl overflow-hidden bg-white shadow-sm" ref={canvasRef}>
-                <img src={customFloorPlan.imageDataUrl} alt="Custom floor plan" className="w-full h-auto block" />
-                
-                {/* Close button to remove blueprint background */}
-                {canEdit() && (
-                  <button
-                    onClick={() => {
-                      if (confirm("Apakah Anda yakin ingin menghapus gambar denah ini? Zona interaktif yang sudah ada akan tetap dipertahankan.")) {
-                        updateActiveFloorPlan(null);
-                        setToast("Gambar denah dihapus. Zona interaktif tetap dipertahankan.");
-                      }
-                    }}
-                    className="absolute top-3 right-3 z-35 p-2 rounded-full bg-red-650 hover:bg-red-700 text-white shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center border border-red-500/10"
-                    title="Hapus Gambar Denah"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
+            {/* 1. Blueprint Image Section (reference only, above canvas) */}
+            {customFloorPlan?.imageDataUrl && (
+              <div className="space-y-2">
+                {/* Blueprint header bar */}
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-stone-500">
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>Denah Upload{customFloorPlan.fileName ? ` — ${customFloorPlan.fileName}` : ''}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowBlueprintImage(v => !v)}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-stone-200 bg-white text-[10px] font-bold text-stone-600 hover:bg-stone-50 transition-all shadow-sm active:scale-95"
+                    >
+                      {showBlueprintImage ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                      {showBlueprintImage ? 'Sembunyikan' : 'Tampilkan'}
+                    </button>
+                    {canEdit() && (
+                      <button
+                        onClick={() => showConfirm(
+                          'Hapus Gambar Denah',
+                          'Hapus gambar denah ini? Zona interaktif yang sudah ada akan tetap dipertahankan.',
+                          () => { closeConfirm(); updateActiveFloorPlan(null); setShowBlueprintImage(true); setToast('Gambar denah dihapus.'); }
+                        )}
+                        className="flex items-center gap-1 px-3 py-1 rounded-full border border-red-200 bg-red-50 text-[10px] font-bold text-red-600 hover:bg-red-100 transition-all shadow-sm active:scale-95"
+                        title="Hapus Gambar Denah"
+                      >
+                        <Trash2 className="w-3 h-3" /> Hapus
+                      </button>
+                    )}
+                  </div>
+                </div>
 
-                {/* Custom Interactive Zones Overlay */}
-                {interactiveZones.map(zone => renderInteractiveZone(zone))}
-              </div>
-            ) : (
-              /* 2. Interactive Zones Canvas - Digital Twin grid fallback (no custom blueprint) */
-              <div 
-                className="relative w-full border border-stone-200 rounded-xl bg-white min-h-[680px] shadow-inner" 
-                ref={canvasRef}
-                style={{ 
-                  backgroundImage: 'radial-gradient(#2C742F12 1px, transparent 1px)', 
-                  backgroundSize: '24px 24px' 
-                }}
-              >
-                {/* Custom Interactive Zones Overlay */}
-                {interactiveZones.map(zone => renderInteractiveZone(zone))}
+                {/* Blueprint image */}
+                <AnimatePresence>
+                  {showBlueprintImage && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="w-full border border-stone-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                        <img src={customFloorPlan.imageDataUrl} alt="Denah lantai" className="w-full h-auto block" />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
+
+            {/* 2. Interactive Zones Canvas — always visible for editing */}
+            <div
+              className="relative w-full border border-stone-200 rounded-xl bg-white min-h-[680px] shadow-inner"
+              ref={canvasRef}
+              style={{
+                backgroundImage: 'radial-gradient(#2C742F12 1px, transparent 1px)',
+                backgroundSize: '24px 24px'
+              }}
+            >
+              {interactiveZones.map(zone => renderInteractiveZone(zone))}
+            </div>
           </>
         )}
       </div>
@@ -1525,6 +1599,7 @@ export default function FloorPlanPage() {
       {/* Floating Popup Slot/Room Details Card Overlay */}
       <AnimatePresence>
         {selectedSlotPopup && selectedSlot && (
+          <Portal>
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={closePopup}>
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -1552,7 +1627,7 @@ export default function FloorPlanPage() {
                   <div>
                     <h3 className="font-extrabold text-green-950 text-base leading-tight mt-0.5">{selectedSlot.name}</h3>
                     <p className="text-[10px] font-extrabold text-[#79747E] uppercase tracking-wider mt-1.5">
-                      Zone {selectedSlot.zone} • {selectedSlot.isCustom ? 'Custom' : 'Static Bounds'}
+                      Zone {selectedSlot.zone} • {selectedSlot.isCustom ? 'Custom Zone' : 'Default Room'}
                     </p>
                   </div>
                 </div>
@@ -1561,14 +1636,12 @@ export default function FloorPlanPage() {
               {/* Layout Modification Actions */}
               {canEdit() && (
                 <div className="px-5 pt-4 flex gap-2 w-full">
-                  {selectedSlot.isCustom && (
-                    <button
-                      onClick={() => { handleEditZoneClick(selectedSlot as InteractiveZone); closePopup(); }}
-                      className="flex-1 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold hover:bg-blue-100 transition-colors shadow-sm"
-                    >
-                      Edit Zone Info
-                    </button>
-                  )}
+                  <button
+                    onClick={() => { handleEditZoneClick(selectedSlot as InteractiveZone); closePopup(); }}
+                    className="flex-1 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold hover:bg-blue-100 transition-colors shadow-sm"
+                  >
+                    Edit Zone Info
+                  </button>
                   <button
                     onClick={() => {
                       if (selectedSlot.isCustom) {
@@ -1619,7 +1692,7 @@ export default function FloorPlanPage() {
 
                   {!showAddForm ? (
                     selectedRoomStats.materials.length > 0 ? (
-                      <div className="divide-y divide-stone-100 max-h-40 overflow-y-auto pr-1">
+                      <div className="divide-y divide-stone-100 pr-1">
                         {selectedRoomStats.materials.map(m => (
                           <div key={m.id} className="flex justify-between items-center py-2.5">
                             <div>
@@ -1653,27 +1726,49 @@ export default function FloorPlanPage() {
                           className="w-full px-3 py-2 border border-stone-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#2C742F]"
                         />
 
-                        {searchLotQuery && !addData.selectedLotId && (
-                          <div className="mt-1.5 max-h-32 overflow-y-auto bg-white border border-stone-200 rounded-lg divide-y divide-stone-100 shadow-lg">
-                            {getAvailableInventory()
-                              .filter(m => m.name.toLowerCase().includes(searchLotQuery.toLowerCase()) || m.id.toLowerCase().includes(searchLotQuery.toLowerCase()))
-                              .map(m => (
-                                <div
-                                  key={m.id}
-                                  onClick={() => {
-                                    setSearchLotQuery(`${m.name} (${m.id})`);
-                                    setAddData({ ...addData, selectedLotId: m.id });
-                                    const suggest = getPlacementSuggestion(m.category);
-                                    setAiSuggestion(suggest);
-                                  }}
-                                  className="p-2.5 hover:bg-stone-50 cursor-pointer text-left transition-colors"
-                                >
-                                  <div className="text-xs font-bold text-stone-800">{m.name}</div>
-                                  <div className="text-[10px] font-semibold text-stone-400 mt-0.5">Lot ID: {m.id} | Qty: {m.qty} {m.unit}</div>
+                        {searchLotQuery && !addData.selectedLotId && (() => {
+                          const q = searchLotQuery.toLowerCase();
+                          const results = getAvailableInventory().filter(m =>
+                            m.name.toLowerCase().includes(q) ||
+                            String(m.id).toLowerCase().includes(q) ||
+                            (m.category || '').toLowerCase().includes(q)
+                          );
+                          return (
+                            <div className="mt-1.5 max-h-40 overflow-y-auto bg-white border border-stone-200 rounded-lg shadow-lg divide-y divide-stone-100">
+                              {results.length === 0 ? (
+                                <div className="p-3 text-center text-[10px] font-semibold text-stone-400">
+                                  Tidak ada material ditemukan
                                 </div>
-                              ))}
-                          </div>
-                        )}
+                              ) : results.map(m => {
+                                const currentLoc = (m as any).location;
+                                const isElsewhere = currentLoc && currentLoc !== 'UNASSIGNED' && currentLoc !== selectedSlotId;
+                                return (
+                                  <div
+                                    key={m.id}
+                                    onClick={() => {
+                                      setSearchLotQuery(`${m.name} (${m.id})`);
+                                      setAddData({ ...addData, selectedLotId: String(m.id) });
+                                      setAiSuggestion(getPlacementSuggestion(m.category));
+                                    }}
+                                    className="p-2.5 hover:bg-[#F5FBF3] cursor-pointer text-left transition-colors"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-xs font-bold text-stone-800">{m.name}</span>
+                                      {isElsewhere && (
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 shrink-0">
+                                          {currentLoc}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] font-semibold text-stone-400 mt-0.5">
+                                      {m.id} · {m.category} · {m.qty} {m.unit}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {aiSuggestion && addData.selectedLotId && (
@@ -1712,6 +1807,7 @@ export default function FloorPlanPage() {
               </div>
             </motion.div>
           </div>
+          </Portal>
         )}
       </AnimatePresence>
 
@@ -1872,6 +1968,17 @@ export default function FloorPlanPage() {
           </Portal>
         )}
       </AnimatePresence>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={confirmState.onConfirm}
+        onCancel={closeConfirm}
+      />
 
       {/* Dynamic Toast Notification */}
       <AnimatePresence>

@@ -16,6 +16,7 @@ import {
 import { calculateUtilization } from "@/lib/dashboard";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
+import { ZONE_TEMP_THRESHOLDS } from "@/lib/constants";
 import type { InventoryItem, AuditLog } from "@/types";
 import {
   LineChart,
@@ -342,69 +343,87 @@ export default function DashboardPage() {
   const [dashboardStats, setDashboardStats] = useState<DashboardStatsResponse | null>(null);
 
   const fetchDashboardData = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
+    setIsLoading(true);
+    setError(null);
 
-      const [invData, auditData, tempData, statsData] = await Promise.all([
-        api.get<{ success: boolean; items: InventoryItem[] }>("/inventory"),
-        api.get<{ success: boolean; logs: AuditLog[] }>("/audit"),
-        api.get<{
-          success: boolean;
-          temperatures: Record<string, Array<{ temperature: number }>>;
-        }>("/cold-chain"),
-        api.get<DashboardStatsResponse>("/dashboard/stats"),
-      ]);
+    const [invRes, auditRes, tempRes, statsRes] = await Promise.allSettled([
+      api.get<{ success: boolean; items: InventoryItem[] }>("/inventory"),
+      api.get<{ success: boolean; logs: AuditLog[] }>("/audit"),
+      api.get<{ success: boolean; temperatures: Record<string, Array<{ temperature: number }>> }>("/cold-chain"),
+      api.get<DashboardStatsResponse>("/dashboard/stats"),
+    ]);
 
-      if (invData.success) setInventory(invData.items ?? []);
-      if (auditData.success) setActivities(auditData.logs?.slice(0, 5) ?? []);
-      if (statsData.success) setDashboardStats(statsData);
+    let anySuccess = false;
 
-      if (tempData.success) {
-        const thresholds: Record<string, { min: number; max: number }> = {
-          A: { min: 20, max: 30 },
-          B: { min: 15, max: 25 },
-          C: { min: 18, max: 28 },
-          D: { min: -5, max: 5 },
-          E: { min: 15, max: 25 },
-        };
-        let anomalies = 0;
-        Object.entries(tempData.temperatures ?? {}).forEach(([zoneId, readings]) => {
-          const bounds = thresholds[zoneId] ?? { min: -10, max: 40 };
-          if (readings.some((r) => r.temperature > bounds.max || r.temperature < bounds.min)) {
-            anomalies++;
-          }
-        });
-        setColdChainAlertsCount(anomalies);
-      }
-    } catch {
-      setError("Unable to connect to the server. Please try again later.");
-    } finally {
-      setIsLoading(false);
+    if (invRes.status === "fulfilled" && invRes.value.success) {
+      setInventory(invRes.value.items ?? []);
+      anySuccess = true;
     }
+    if (auditRes.status === "fulfilled" && auditRes.value.success) {
+      setActivities(auditRes.value.logs?.slice(0, 5) ?? []);
+      anySuccess = true;
+    }
+    if (statsRes.status === "fulfilled" && statsRes.value.success) {
+      setDashboardStats(statsRes.value);
+      anySuccess = true;
+    }
+    if (tempRes.status === "fulfilled" && tempRes.value.success) {
+      let anomalies = 0;
+      Object.entries(tempRes.value.temperatures ?? {}).forEach(([zoneId, readings]) => {
+        const bounds = ZONE_TEMP_THRESHOLDS[zoneId] ?? { min: -10, max: 40 };
+        if (readings.some((r: any) => r.temperature > bounds.max || r.temperature < bounds.min)) {
+          anomalies++;
+        }
+      });
+      setColdChainAlertsCount(anomalies);
+      anySuccess = true;
+    }
+
+    if (!anySuccess) {
+      setError("Unable to connect to the server. Please try again later.");
+    }
+
+    setIsLoading(false);
   };
 
   useEffect(() => {
     Promise.resolve().then(fetchDashboardData);
   }, []);
 
-  // Computed stats from inventory
+  // Computed stats from inventory + DB
   const stats = useMemo(() => {
-    const totalSlots = 30;
+    const totalSlots = dashboardStats?.zoneSummary?.reduce((sum, z) => sum + z.totalSlots, 0) || 30;
     const occupiedSlots = inventory.length;
-    const capacity = Math.round((occupiedSlots / totalSlots) * 100);
+    const capacity = Math.min(100, Math.round((occupiedSlots / totalSlots) * 100));
     return { capacity, totalSlots, occupiedSlots };
-  }, [inventory]);
+  }, [inventory, dashboardStats]);
 
   const activeItemsCount = useMemo(
     () => inventory.filter((i) => i.status !== "Expired").length,
     [inventory]
   );
 
-  const expiringSoonCount = useMemo(
-    () => inventory.filter((i) => i.status === "Warning" || i.status === "Kritis").length,
+  const criticalCount = useMemo(
+    () => inventory.filter((i) => i.status === "Kritis").length,
     [inventory]
   );
+
+  const warningCount = useMemo(
+    () => inventory.filter((i) => i.status === "Warning").length,
+    [inventory]
+  );
+
+  const expiringSoonCount = useMemo(
+    () => criticalCount + warningCount,
+    [criticalCount, warningCount]
+  );
+
+  // Weekly stock change: compare last day vs first day of trend
+  const weeklyChange = useMemo(() => {
+    const trend = dashboardStats?.weeklyTrend;
+    if (!trend || trend.length < 2) return null;
+    return trend[trend.length - 1].count - trend[0].count;
+  }, [dashboardStats]);
 
   // Items requiring immediate use (Expired or Kritis)
   const immediateUseItems = useMemo(() => {
@@ -491,8 +510,14 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 text-sm">
-            <TrendingUp size={16} className="text-[#2C742F]" />
-            <span className="text-[#2C742F] font-semibold">+12 this week</span>
+            <TrendingUp size={16} className={weeklyChange !== null && weeklyChange < 0 ? "text-[#EA4B48]" : "text-[#2C742F]"} />
+            {weeklyChange !== null ? (
+              <span className={`font-semibold ${weeklyChange < 0 ? "text-[#EA4B48]" : "text-[#2C742F]"}`}>
+                {weeklyChange >= 0 ? `+${weeklyChange}` : weeklyChange} this week
+              </span>
+            ) : (
+              <span className="text-[#79747E] font-medium">Loading trend...</span>
+            )}
           </div>
         </motion.div>
 
@@ -517,7 +542,12 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-1.5 text-sm">
             <AlertTriangle size={14} className="text-[#EA4B48]" />
-            <span className="text-[#EA4B48] font-semibold">within 30 days</span>
+            <span className="text-[#EA4B48] font-semibold">
+              {criticalCount > 0 && `${criticalCount} kritis`}
+              {criticalCount > 0 && warningCount > 0 && ", "}
+              {warningCount > 0 && `${warningCount} warning`}
+              {criticalCount === 0 && warningCount === 0 && "Semua aman"}
+            </span>
           </div>
         </motion.div>
 
@@ -639,7 +669,7 @@ export default function DashboardPage() {
               <thead>
                 <tr className="border-b border-gray-100 text-xs text-[#79747E] font-semibold uppercase tracking-wider">
                   <th className="px-6 py-3">Material</th>
-                  <th className="px-6 py-3">Lot Number</th>
+                  <th className="px-6 py-3">Lot ID</th>
                   <th className="px-6 py-3">Days Left</th>
                   <th className="px-6 py-3">Status</th>
                 </tr>

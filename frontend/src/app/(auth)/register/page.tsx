@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, ChevronDown } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { useLanguage } from "@/lib/i18n";
 import type { UserRole } from "@/types";
 
 export default function RegisterPage() {
   const router = useRouter();
   const { register } = useAuth();
+  const { t } = useLanguage();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,17 +27,17 @@ export default function RegisterPage() {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
-    if (!name) newErrors.name = "Full name is required";
-    if (!email) newErrors.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Invalid email format";
+    if (!name) newErrors.name = t("nameRequired");
+    if (!email) newErrors.email = t("emailRequired");
+    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = t("emailInvalid");
 
-    if (!role) newErrors.role = "Role is required";
+    if (!role) newErrors.role = t("roleRequired");
 
-    if (!password) newErrors.password = "Password is required";
-    else if (password.length < 6) newErrors.password = "Password must be at least 6 characters";
+    if (!password) newErrors.password = t("passwordRequired");
+    else if (password.length < 6) newErrors.password = t("passwordMinLengthErr");
 
     if (password !== confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match";
+      newErrors.confirmPassword = t("passwordsNoMatch");
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -62,11 +64,11 @@ export default function RegisterPage() {
         }
         router.push("/overview");
       } else {
-        setErrors({ submit: res.error || "Failed to register" });
+        setErrors({ submit: res.error || t("registerFailed") });
       }
     } catch (err) {
       setIsLoading(false);
-      setErrors({ submit: "Connection to registration server failed." });
+      setErrors({ submit: t("registerConnFailed") });
     }
   };
 
@@ -81,13 +83,17 @@ export default function RegisterPage() {
             alt="Sign Up Aromatic Bottle"
             className="h-full w-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
           
           {/* Bottom Left Quote */}
           <div className="absolute bottom-20 left-20 text-left pr-10">
-            <h2 className="text-6xl md:text-7xl xl:text-[84px] font-black text-brand-sage-bg leading-[0.82] tracking-tighter lowercase font-sans">
-              kata kata<br />hari ini
+            <h2 className="text-5xl md:text-6xl xl:text-[72px] font-black leading-[0.95] tracking-tighter font-sans">
+              <span className="text-white block">{t("signUpQuotePart1")}</span>
+              <span className="text-[#BCF389] block mt-2">{t("signUpQuotePart2")}</span>
             </h2>
+            <p className="text-stone-300 text-sm font-medium tracking-wide mt-4 max-w-md font-sans">
+              {t("signUpQuoteDesc")}
+            </p>
           </div>
         </div>
       </div>
@@ -102,7 +108,7 @@ export default function RegisterPage() {
               onClick={() => router.push('/')} 
               className="flex items-center gap-1.5 text-xs font-bold text-brand-sage-grey hover:text-brand-sage-charcoal transition-all focus:outline-none"
             >
-              <span className="text-sm">←</span> Back
+              <span className="text-sm">←</span> {t("backBtn")}
             </button>
           </div>
 
@@ -110,22 +116,23 @@ export default function RegisterPage() {
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 mb-3">
               <img src="/logo-aromasys-new.png" alt="AromaSys" className="w-8 h-8 object-contain" />
-              <span className="font-bold text-lg text-brand-sage-charcoal">AromaSys</span>
+              <span className="font-bold text-lg text-brand-sage-charcoal">{t("landingTitle1")}</span>
             </div>
-            <h1 className="text-4xl font-extrabold text-brand-sage-charcoal tracking-tight">Sign Up</h1>
-            <p className="text-sm text-brand-sage-grey font-medium tracking-wide">Sign up for a new enterprise account</p>
+            <h1 className="text-4xl font-extrabold text-brand-sage-charcoal tracking-tight">{t("signUpTitle")}</h1>
+            <p className="text-sm text-brand-sage-grey font-medium tracking-wide">{t("signUpSubtitle")}</p>
           </div>
 
           <form onSubmit={handleRegister} className="space-y-5">
             {errors.submit && <p className="text-xs text-brand-sage-coral font-bold text-center bg-red-100/50 py-2 rounded-lg">{errors.submit}</p>}
+            
             {/* Input 1: Full Name */}
             <div className="relative w-full">
               <label className="absolute -top-2.5 left-3.5 bg-brand-sage-bg px-1.5 text-xs font-semibold text-brand-sage-grey leading-none">
-                Full Name
+                {t("fullNameLabel")}
               </label>
               <input
                 type="text"
-                placeholder="john.doe@gmail.com"
+                placeholder={t("fullNamePlaceholder")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full bg-transparent border border-brand-sage-grey/50 focus:border-brand-sage-green rounded-lg px-4 py-3.5 text-sm text-brand-sage-charcoal placeholder:text-brand-sage-grey/40 focus:outline-none focus:ring-1 focus:ring-brand-sage-green/20 transition-all font-semibold"
@@ -140,7 +147,7 @@ export default function RegisterPage() {
               </label>
               <input
                 type="email"
-                placeholder="john.doe@gmail.com"
+                placeholder={t("emailPlaceholder")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-transparent border border-brand-sage-grey/50 focus:border-brand-sage-green rounded-lg px-4 py-3.5 text-sm text-brand-sage-charcoal placeholder:text-brand-sage-grey/40 focus:outline-none focus:ring-1 focus:ring-brand-sage-green/20 transition-all font-semibold"
@@ -159,11 +166,11 @@ export default function RegisterPage() {
                   onChange={(e) => setRole(e.target.value)}
                   className="w-full bg-transparent border border-brand-sage-grey/50 focus:border-brand-sage-green rounded-lg px-4 py-3.5 text-sm text-brand-sage-charcoal appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-brand-sage-green/20 transition-all font-semibold"
                 >
-                  <option value="" disabled className="bg-brand-sage-bg text-brand-sage-grey/60">Select a role...</option>
-                  <option value="WAREHOUSE_STAFF" className="bg-brand-sage-bg text-brand-sage-charcoal">Warehouse Staff (Aroma Stock)</option>
-                  <option value="QUALITY_CONTROL" className="bg-brand-sage-bg text-brand-sage-charcoal">Quality Control (Lab Assessor)</option>
-                  <option value="PPIC" className="bg-brand-sage-bg text-brand-sage-charcoal">Production Planner (PPIC)</option>
-                  <option value="ADMIN" className="bg-brand-sage-bg text-brand-sage-charcoal">Operations Manager (Admin)</option>
+                  <option value="" disabled className="bg-brand-sage-bg text-brand-sage-grey/60">{t("roleLabelSelect")}</option>
+                  <option value="WAREHOUSE_STAFF" className="bg-brand-sage-bg text-brand-sage-charcoal">{t("roleWarehouseStaff")}</option>
+                  <option value="QUALITY_CONTROL" className="bg-brand-sage-bg text-brand-sage-charcoal">{t("roleQCSelect")}</option>
+                  <option value="PPIC" className="bg-brand-sage-bg text-brand-sage-charcoal">{t("rolePPICSelect")}</option>
+                  <option value="ADMIN" className="bg-brand-sage-bg text-brand-sage-charcoal">{t("roleAdminSelect")}</option>
                 </select>
                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-sage-charcoal pointer-events-none" />
               </div>
@@ -178,7 +185,7 @@ export default function RegisterPage() {
               <div className="relative flex items-center">
                 <input
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••••"
+                  placeholder={t("passwordPlaceholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-transparent border border-brand-sage-grey/50 focus:border-brand-sage-green rounded-lg px-4 py-3.5 text-sm text-brand-sage-charcoal placeholder:text-brand-sage-grey/40 focus:outline-none focus:ring-1 focus:ring-brand-sage-green/20 transition-all font-semibold pr-12"
@@ -197,12 +204,12 @@ export default function RegisterPage() {
             {/* Input 5: Confirm Password */}
             <div className="relative w-full">
               <label className="absolute -top-2.5 left-3.5 bg-brand-sage-bg px-1.5 text-xs font-semibold text-brand-sage-grey leading-none z-10">
-                Confirm Password
+                {t("confirmPasswordLabel")}
               </label>
               <div className="relative flex items-center">
                 <input
                   type={showConfirmPassword ? "text" : "password"}
-                  placeholder="••••••••••"
+                  placeholder={t("passwordPlaceholder")}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="w-full bg-transparent border border-brand-sage-grey/50 focus:border-brand-sage-green rounded-lg px-4 py-3.5 text-sm text-brand-sage-charcoal placeholder:text-brand-sage-grey/40 focus:outline-none focus:ring-1 focus:ring-brand-sage-green/20 transition-all font-semibold pr-12"
@@ -227,10 +234,10 @@ export default function RegisterPage() {
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="rounded border border-brand-sage-grey/50 bg-transparent text-[#00a81c] focus:ring-0 focus:ring-offset-0 cursor-pointer w-4 h-4"
                 />
-                <span className="text-xs font-semibold text-brand-sage-grey">Remember me</span>
+                <span className="text-xs font-semibold text-brand-sage-grey">{t("rememberMe")}</span>
               </label>
               <a href="#" className="text-xs font-bold text-brand-sage-coral hover:text-brand-sage-coral/80 transition-all">
-                Forgot Password
+                {t("forgotPassword")}
               </a>
             </div>
 
@@ -246,16 +253,16 @@ export default function RegisterPage() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               ) : (
-                "Sign Up"
+                t("signUpSubmit")
               )}
             </button>
           </form>
 
           {/* Already have an account */}
           <div className="text-center text-xs pt-2">
-            <span className="text-brand-sage-charcoal/80 font-medium">Already have an account? </span>
+            <span className="text-brand-sage-charcoal/80 font-medium">{t("alreadyHaveAccount")} </span>
             <Link href="/login" className="font-bold text-[#00a81c] hover:text-[#00be20] transition-all">
-              Sign In
+              {t("signInNow")}
             </Link>
           </div>
 

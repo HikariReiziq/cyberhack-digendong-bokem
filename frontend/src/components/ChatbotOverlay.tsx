@@ -3,12 +3,13 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Send, Bot, User as UserIcon, X, Loader2, MessageSquare,
   Paperclip, Lightbulb, Package, AlertTriangle, Calendar, Snowflake, Clock,
-  FileDown, BarChart2
+  FileDown, BarChart2, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { callGemini } from '@/lib/gemini';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
+import { useAuth } from '@/lib/auth';
 import type { ChatMessage } from '@/types';
 
 interface Props {
@@ -185,10 +186,44 @@ function downloadPdfReport(text: string) {
 
 export default function ChatbotOverlay({ isOpen, onClose, messages, setMessages }: Props) {
   const { t, lang } = useLanguage();
+  const { user } = useAuth();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [dbContext, setDbContext] = useState('');
   const [lastSyncTime, setLastSyncTime] = useState('');
+  const [attachedFile, setAttachedFile] = useState<{ name: string; base64: string; type: string } | null>(null);
+  const [showConfirmClear, setShowConfirmClear] = useState(false);
+  const [fileToast, setFileToast] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const userAvatarUrl = user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'U')}&background=2C742F&color=fff&size=200`;
+
+  const handleClearHistory = () => {
+    setShowConfirmClear(true);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setFileToast(lang === 'en' ? 'Only image files are supported for AI analysis.' : 'Hanya file gambar yang didukung untuk analisis AI.');
+      setTimeout(() => setFileToast(null), 4000);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      const base64Data = result.split(',')[1];
+      setAttachedFile({
+        name: file.name,
+        base64: base64Data,
+        type: file.type
+      });
+    };
+    reader.readAsDataURL(file);
+  };
 
   const INSIGHTS = [
     {
@@ -231,8 +266,8 @@ export default function ChatbotOverlay({ isOpen, onClose, messages, setMessages 
       title: t('insightGenerateReport'),
       description: t('insightGenerateReportDesc'),
       query: lang === 'en'
-        ? 'Generate a complete inventory report as a markdown table with columns: Name, Category, Qty, Unit, Zone/Location, Status, Expiry Date. Include all items.'
-        : 'Buat laporan inventori lengkap dalam format tabel markdown dengan kolom: Nama, Kategori, Qty, Unit, Zona/Lokasi, Status, Tanggal Kedaluwarsa. Sertakan semua item.',
+        ? 'Generate a complete inventory report as a markdown table with columns: Name, Category, Qty, Unit, Zone/Location, Status, Expiry Date. Include all items and make it downloadable as PDF.'
+        : 'Buat laporan inventori lengkap dalam format tabel markdown dengan kolom: Nama, Kategori, Qty, Unit, Zona/Lokasi, Status, Tanggal Kedaluwarsa. Sertakan semua item dan buatkan laporan PDF.',
       color: 'green',
       icon: BarChart2
     },
@@ -289,12 +324,18 @@ export default function ChatbotOverlay({ isOpen, onClose, messages, setMessages 
   }, [isOpen]);
 
   async function sendMessage(text: string) {
-    if (!text.trim() || isLoading) return;
+    if (!text.trim() && !attachedFile) return;
+    if (isLoading) return;
+
+    const fileToUpload = attachedFile;
+    setAttachedFile(null);
+
     const userMsg: ChatMessage = {
       id: Date.now(),
       sender: 'user',
-      text: text.trim(),
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      text: text.trim() || (lang === 'en' ? 'Uploaded an image for analysis' : 'Mengunggah gambar untuk dianalisis'),
+      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      image: fileToUpload ? `data:${fileToUpload.type};base64,${fileToUpload.base64}` : undefined
     };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
@@ -303,24 +344,30 @@ export default function ChatbotOverlay({ isOpen, onClose, messages, setMessages 
     const langInstruction = lang === 'en'
       ? 'Always respond in English.'
       : 'Selalu jawab dalam Bahasa Indonesia.';
-    const systemPrompt = `You are Aro, the AromaSys AI Copilot — a warehouse AI assistant for SIMA AROME (Sistem Manajemen Aroma). ${langInstruction}
+    const systemPrompt = `You are Aro, the AromaSys AI Copilot — an expert warehouse AI assistant for SIMA AROME (Sistem Manajemen Aroma). ${langInstruction}
 
 WAREHOUSE DATA CONTEXT:
 ${dbContext || 'Warehouse management system for aromatic materials'}
 
-FORMATTING RULES (MANDATORY):
-1. For ANY data with more than 2 rows (inventory lists, schedules, comparisons, expiry lists, stock levels, zones), you MUST present it as a markdown table with clear column headers using the | Col1 | Col2 | format.
+FORMATTING RULES & RESPONSE GUIDELINES (MANDATORY):
+1. For structured data with more than 2 rows (like inventory lists, stock levels, temperature sensors, expiry dates, or zones), you MUST present it as a clean markdown table.
 2. Always include a header separator row (|---|---|) after the header row.
-3. For reports and summaries, ALWAYS use tables — never plain bullet lists for structured data.
-4. Keep prose concise, put all data in tables.
-5. When asked to generate a report, produce a comprehensive table covering all relevant data from the context.`;
-    const prompt = `${systemPrompt}\n\nUser: ${text.trim()}`;
+3. IMPORTANT: Along with every table, you MUST provide a detailed, informative analysis and explanation of the data. Summarize the key findings, highlight any potential anomalies or alerts (such as low stock, expiring batches, or temperature excursions), and give professional, actionable warehouse management advice. Do NOT just output a bare table.
+4. If an image is provided, analyze the image carefully (it could be a purchase order, invoice, report, or screenshot), extract relevant data, compare it to the current WMS context if necessary, and write a detailed analysis.`;
+    const prompt = `${systemPrompt}\n\nUser: ${userMsg.text}`;
 
     let responseText = '';
     try {
-      responseText = await callGemini(prompt);
-    } catch {
-      responseText = 'Maaf, layanan AI sedang tidak tersedia untuk sementara. Operasi gudang inti (inventaris, FIFO, cold chain) tetap berjalan normal. Silakan coba lagi nanti atau hubungi admin jika masalah berlanjut.';
+      if (fileToUpload) {
+        responseText = await callGemini(prompt, fileToUpload.base64, fileToUpload.type);
+      } else {
+        responseText = await callGemini(prompt);
+      }
+    } catch (err) {
+      console.error("Gemini call error:", err);
+      responseText = lang === 'en'
+        ? 'Sorry, the AI service is temporarily unavailable. Core operations (inventory, FIFO, cold chain) are running normally. Please try again later.'
+        : 'Maaf, layanan AI sedang tidak tersedia untuk sementara. Operasi gudang inti (inventaris, FIFO, cold chain) tetap berjalan normal. Silakan coba lagi nanti.';
     }
 
     const aiMsg: ChatMessage = {
@@ -353,7 +400,7 @@ FORMATTING RULES (MANDATORY):
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[85vh] max-h-[750px] flex flex-col border border-stone-200 overflow-hidden"
+              className="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[85vh] max-h-[750px] flex flex-col border border-stone-200 overflow-hidden"
             >
               {/* Header */}
               <div className="bg-white px-5 py-4 border-b border-stone-100 flex items-center justify-between shrink-0">
@@ -368,12 +415,21 @@ FORMATTING RULES (MANDATORY):
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={onClose}
-                  className="p-1.5 rounded-full hover:bg-stone-100 bg-white border border-stone-250 text-stone-400 hover:text-stone-750 transition-all focus:outline-none shadow-sm"
-                >
-                  <X size={18} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleClearHistory}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-stone-250 text-stone-500 hover:text-red-600 hover:border-red-200 transition-all text-xs font-bold focus:outline-none shadow-sm mr-2"
+                  >
+                    <Trash2 size={13} />
+                    <span>{lang === 'en' ? 'Clear Chat' : 'Hapus Riwayat'}</span>
+                  </button>
+                  <button
+                    onClick={onClose}
+                    className="p-1.5 rounded-full hover:bg-stone-100 bg-white border border-stone-250 text-stone-400 hover:text-stone-750 transition-all focus:outline-none shadow-sm"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
               {/* Body split into 2 columns */}
@@ -382,7 +438,7 @@ FORMATTING RULES (MANDATORY):
                 {/* Left Column: Chat Thread */}
                 <div className="flex-1 flex flex-col min-h-0 relative">
                   <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar text-left">
-                    {messages.map(msg => (
+                    {messages.map((msg, index) => (
                       <div
                         key={msg.id}
                         className={`flex items-start gap-3 w-full mb-2 ${
@@ -409,7 +465,7 @@ FORMATTING RULES (MANDATORY):
                               ? (
                                   <div className="space-y-2">
                                     <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
-                                    {(msg.text.includes('|') || msg.text.length > 700) && (
+                                    {msg.text.includes('|') && (
                                       <button
                                         onClick={() => downloadPdfReport(msg.text)}
                                         className="flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg bg-[#2C742F] text-white text-[10px] font-bold hover:bg-[#366306] transition-all shadow-sm active:scale-95 border border-[#AAE970]/10"
@@ -421,6 +477,11 @@ FORMATTING RULES (MANDATORY):
                                 )
                               : <p className="margin-0">{msg.text}</p>}
                           </div>
+                          {msg.image && (
+                            <div className="mt-2 max-w-xs rounded-lg overflow-hidden border border-stone-200 shadow-sm bg-white">
+                              <img src={msg.image} alt="Uploaded file" className="w-full max-h-48 object-contain" />
+                            </div>
+                          )}
                           <span className="text-[9px] font-bold text-[#79747E] mt-1 block px-1">
                             {msg.time}
                           </span>
@@ -428,8 +489,12 @@ FORMATTING RULES (MANDATORY):
 
                         {/* User Avatar */}
                         {msg.sender === 'user' && (
-                          <div className="w-8 h-8 rounded-full bg-emerald-700/10 border border-emerald-700/20 flex items-center justify-center text-emerald-800 shrink-0 shadow-sm">
-                            <UserIcon size={14} />
+                          <div className="w-8 h-8 rounded-full border border-emerald-700/20 overflow-hidden shrink-0 shadow-sm bg-white">
+                            <img
+                              src={userAvatarUrl}
+                              alt={user?.name || "User"}
+                              className="w-full h-full object-cover"
+                            />
                           </div>
                         )}
                       </div>
@@ -457,28 +522,54 @@ FORMATTING RULES (MANDATORY):
 
                   {/* Input and Disclaimer Footer */}
                   <div className="p-5 border-t border-stone-100 flex flex-col gap-2 shrink-0 bg-white">
+                    {/* Attachment preview banner */}
+                    {attachedFile && (
+                      <div className="flex items-center justify-between px-3.5 py-2 bg-emerald-50/50 border border-emerald-100 rounded-xl mb-1 text-xs text-emerald-800 font-semibold animate-fadeIn">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded uppercase">Image</span>
+                          <span className="truncate max-w-[200px]">{attachedFile.name}</span>
+                        </div>
+                        <button 
+                          onClick={() => setAttachedFile(null)}
+                          className="p-0.5 rounded-full hover:bg-emerald-100 text-emerald-700 focus:outline-none"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-3 px-4 py-2 border border-stone-200 rounded-full focus-within:ring-2 focus-within:ring-[#2C742F]/20 focus-within:border-[#2C742F] transition-all bg-stone-50/50 shadow-inner">
-                      <Paperclip className="w-5 h-5 text-stone-400 hover:text-stone-600 cursor-pointer shrink-0" />
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <Paperclip 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-5 h-5 text-stone-400 hover:text-stone-600 cursor-pointer shrink-0" 
+                      />
                       <input
                         ref={inputRef}
                         type="text"
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') sendMessage(input); }}
-                        placeholder="Ask about stock, expiry, or operations..."
+                        placeholder={lang === 'en' ? 'Ask about stock, expiry, or operations...' : 'Tanya tentang stok, kedaluwarsa, atau operasi...'}
                         disabled={isLoading}
                         className="flex-1 bg-transparent text-xs text-stone-850 placeholder:text-stone-400 focus:outline-none py-1.5"
                       />
                       <button
                         onClick={() => sendMessage(input)}
-                        disabled={isLoading || !input.trim()}
+                        disabled={isLoading || (!input.trim() && !attachedFile)}
                         className="w-8 h-8 rounded-full bg-[#2C742F] hover:bg-[#366306] text-white flex items-center justify-center cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0 active:scale-95 shadow-md shadow-[#2C742F]/15"
                       >
                         <Send size={14} />
                       </button>
                     </div>
                     <p className="text-[9px] text-stone-400 text-center font-semibold mt-1">
-                      AromaSys AI can make mistakes. Verify critical production data.
+                      {lang === 'en' ? 'AromaSys AI can make mistakes. Verify critical production data.' : 'AI AromaSys dapat membuat kesalahan. Verifikasi data produksi penting.'}
                     </p>
                   </div>
                 </div>
@@ -541,15 +632,89 @@ FORMATTING RULES (MANDATORY):
                   <div className="pt-4 border-t border-[#2C742F]/10 space-y-2 mt-4 shrink-0 bg-transparent text-left">
                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#2C742F] tracking-wider uppercase">
                       <Clock size={12} className="text-[#2C742F]" />
-                      <span>System Status</span>
+                      <span>{lang === 'en' ? 'System Status' : 'Status Sistem'}</span>
                     </div>
                     <p className="text-[10px] font-semibold text-[#79747E] leading-normal">
-                      Connected to ERP Database. Last sync: {lastSyncTime || '07:59 PM'}.
+                      {lang === 'en' ? `Connected to ERP Database. Last sync: ${lastSyncTime || '07:59 PM'}.` : `Terhubung ke Database ERP. Sinkronisasi terakhir: ${lastSyncTime || '07:59 PM'}.`}
                     </p>
                   </div>
                 </div>
 
               </div>
+
+              {/* File Toast Notification */}
+              <AnimatePresence>
+                {fileToast && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className="absolute top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2.5 bg-white border border-red-200 rounded-xl shadow-lg max-w-sm"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center text-red-500 border border-red-100 shrink-0">
+                      <AlertTriangle size={14} />
+                    </div>
+                    <p className="text-[11px] font-semibold text-stone-700 leading-snug">{fileToast}</p>
+                    <button onClick={() => setFileToast(null)} className="ml-auto p-0.5 rounded-full hover:bg-stone-100 text-stone-400 shrink-0 focus:outline-none">
+                      <X size={12} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Custom Confirm Clear History Dialog */}
+              <AnimatePresence>
+                {showConfirmClear && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-stone-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+                  >
+                    <motion.div
+                      initial={{ scale: 0.95, y: 15 }}
+                      animate={{ scale: 1, y: 0 }}
+                      exit={{ scale: 0.95, y: 15 }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                      className="bg-white rounded-3xl p-6 max-w-sm w-full border border-stone-200/80 shadow-2xl flex flex-col items-center text-center space-y-4"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center text-red-500 border border-red-100 shadow-sm shrink-0">
+                        <Trash2 size={22} />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="font-extrabold text-stone-850 text-base leading-tight">
+                          {lang === 'en' ? 'Clear Chat History?' : 'Hapus Riwayat Obrolan?'}
+                        </h3>
+                        <p className="text-[11px] font-semibold text-stone-400 leading-normal">
+                          {lang === 'en' 
+                            ? 'This action cannot be undone. All your conversations with Aro will be cleared.'
+                            : 'Tindakan ini tidak dapat dibatalkan. Semua riwayat percakapan Anda dengan Aro akan dihapus.'}
+                        </p>
+                      </div>
+                      <div className="flex gap-3 w-full pt-1.5">
+                        <button
+                          onClick={() => setShowConfirmClear(false)}
+                          className="flex-1 py-2.5 rounded-xl border border-stone-250 hover:bg-stone-50 text-stone-600 hover:text-stone-800 transition-all font-bold text-xs focus:outline-none"
+                        >
+                          {lang === 'en' ? 'Cancel' : 'Batal'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMessages([
+                              { id: 1, sender: 'ai', text: t('chatbotGreeting'), time: '08:00' }
+                            ]);
+                            setShowConfirmClear(false);
+                          }}
+                          className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 active:bg-red-700 text-white transition-all font-bold text-xs focus:outline-none shadow-md shadow-red-500/10"
+                        >
+                          {lang === 'en' ? 'Clear' : 'Hapus'}
+                        </button>
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           </div>
         </>

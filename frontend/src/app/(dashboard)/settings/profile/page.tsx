@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { User, Key, Bell, Save, Check, X, AlertCircle, Camera, LogOut } from 'lucide-react';
 import { api } from '@/lib/api';
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif'];
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 2 * 1024 * 1024;
 
 function ProfileContent() {
@@ -26,6 +26,8 @@ function ProfileContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pwData, setPwData] = useState({ current: '', newPassword: '', confirm: '' });
   const [pwError, setPwError] = useState<string | null>(null);
+  const [notifPrefs, setNotifPrefs] = useState({ email: true, inApp: true, expiry: true, coldChain: true });
+  const [isSavingNotif, setIsSavingNotif] = useState(false);
 
   useEffect(() => {
     if (user) { setProfileData({ name: user.name || '', email: user.email || '' }); setCurrentAvatar(user.avatar || null); }
@@ -38,11 +40,28 @@ function ProfileContent() {
 
   useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(null), 4000); return () => clearTimeout(timer); } }, [toast]);
 
+  useEffect(() => {
+    if (user && activeTab === 'notifications') {
+      api.get<{ success: boolean; settings?: Record<string, boolean> }>('/profile/settings')
+        .then(res => {
+          if (res.success && res.settings) {
+            setNotifPrefs({
+              email: res.settings.email !== false,
+              inApp: res.settings.inApp !== false,
+              expiry: res.settings.expiry !== false,
+              coldChain: res.settings.coldChain !== false
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user, activeTab]);
+
   function handleAvatarSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setAvatarError(null);
-    if (!ALLOWED_TYPES.includes(file.type)) { setAvatarError('Format tidak didukung. Gunakan JPG, PNG, atau GIF.'); return; }
+    if (!ALLOWED_TYPES.includes(file.type)) { setAvatarError('Format tidak didukung. Gunakan JPG, PNG, atau WEBP.'); return; }
     if (file.size > MAX_SIZE) { setAvatarError('Ukuran file melebihi 2MB.'); return; }
     const reader = new FileReader();
     reader.onload = e => {
@@ -56,14 +75,15 @@ function ProfileContent() {
     e.preventDefault();
     setIsSaving(true);
     try {
-      const payload: Record<string, string> = { name: profileData.name, email: profileData.email };
+      const payload: Record<string, unknown> = { userId: user?.id, name: profileData.name, email: profileData.email };
       if (avatarBase64) payload.avatar = avatarBase64;
       const data = await api.put<{ success: boolean; user?: { name: string; email: string; avatar?: string } }>('/profile', payload);
-      if (data.success && data.user) {
+      if (data.success) {
         const stored = JSON.parse(localStorage.getItem('aromasys_user') || '{}');
-        const updated = { ...stored, name: data.user.name, email: data.user.email, avatar: data.user.avatar ?? stored.avatar };
+        const newAvatar = data.user?.avatar ?? (avatarBase64 || stored.avatar);
+        const updated = { ...stored, name: profileData.name, email: profileData.email, avatar: newAvatar };
         localStorage.setItem('aromasys_user', JSON.stringify(updated));
-        if (data.user.avatar) setCurrentAvatar(data.user.avatar);
+        if (newAvatar !== stored.avatar) setCurrentAvatar(newAvatar);
         window.dispatchEvent(new Event('aromasys_avatar_updated'));
         setAvatarPreview(null); setAvatarBase64(null);
         setToast({ msg: t('updateProfileSuccess'), type: 'success' });
@@ -79,11 +99,27 @@ function ProfileContent() {
     if (pwData.newPassword !== pwData.confirm) { setPwError(t('passwordNoMatch')); return; }
     setIsSaving(true);
     try {
-      const data = await api.put<{ success: boolean; error?: string }>('/profile', { currentPassword: pwData.current, newPassword: pwData.newPassword });
+      const data = await api.put<{ success: boolean; error?: string }>('/profile', { userId: user?.id, currentPassword: pwData.current, newPassword: pwData.newPassword });
       if (data.success) { setPwData({ current: '', newPassword: '', confirm: '' }); setToast({ msg: t('changePasswordSuccess'), type: 'success' }); }
       else setToast({ msg: data.error ?? 'Failed to change password.', type: 'error' });
     } catch { setToast({ msg: 'Failed to connect.', type: 'error' }); }
     finally { setIsSaving(false); }
+  }
+
+  async function saveNotifications() {
+    setIsSavingNotif(true);
+    try {
+      const res = await api.put<{ success: boolean }>('/profile/settings', { settings: notifPrefs });
+      if (res.success) {
+        setToast({ msg: 'Notification preferences saved!', type: 'success' });
+      } else {
+        setToast({ msg: 'Failed to save preferences.', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Failed to connect.', type: 'error' });
+    } finally {
+      setIsSavingNotif(false);
+    }
   }
 
   function handleLogout() {
@@ -213,15 +249,19 @@ function ProfileContent() {
                 <p className="text-xs text-[#79747E] mt-0.5">{pref.desc}</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" defaultChecked className="sr-only peer" />
+                <input type="checkbox"
+                  checked={notifPrefs[pref.key as keyof typeof notifPrefs]}
+                  onChange={e => setNotifPrefs(prev => ({ ...prev, [pref.key]: e.target.checked }))}
+                  className="sr-only peer" />
                 <div className="w-10 h-5 bg-stone-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#2C742F]" />
               </label>
             </div>
           ))}
           <button
-            onClick={() => { setToast({ msg: 'Notification preferences saved!', type: 'success' }); }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#2C742F] hover:bg-[#366306] text-white font-bold text-sm transition-all">
-            <Save className="w-4 h-4" />{t('saveChanges')}
+            onClick={saveNotifications}
+            disabled={isSavingNotif}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#2C742F] hover:bg-[#366306] text-white font-bold text-sm transition-all disabled:opacity-50">
+            {isSavingNotif ? t('save') + '...' : <><Save className="w-4 h-4" />{t('saveChanges')}</>}
           </button>
         </motion.div>
       )}
