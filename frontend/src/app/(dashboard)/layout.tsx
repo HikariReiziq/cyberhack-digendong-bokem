@@ -58,9 +58,15 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [chatOpen, setChatOpen] = useState(false);
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     { id: 1, sender: 'ai', text: 'Halo! Saya Aro, asisten AI AromaSys. Ada yang bisa saya bantu terkait inventori atau data sensor hari ini?', time: '08:00' }
   ]);
+
+  // Set mounted flag after first render to prevent hydration mismatch
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Update chatbot greeting when language changes (only if no conversation has started)
   useEffect(() => {
@@ -286,7 +292,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Sidebar Nav */}
-        <nav className="flex-1 px-3 py-6 space-y-5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-6 space-y-5 overflow-y-auto" suppressHydrationWarning>
           {menuGroups.map((group) => (
             <div key={group.title} className="space-y-1">
               <div className="px-4 py-1">
@@ -318,9 +324,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Footer Logout */}
-        <div className="p-3 border-t border-white/10">
+        <div className="p-3 border-t border-white/10" suppressHydrationWarning>
           <button
             onClick={handleLogout}
+            suppressHydrationWarning
             className="w-full px-4 py-2.5 rounded-xl flex items-center gap-3.5 text-sm font-semibold text-green-200/80 hover:text-white hover:bg-white/5 transition-all"
           >
             <LogOut className="w-4.5 h-4.5 text-green-200/70" />
@@ -427,6 +434,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setShowSearchDropdown(true); }}
                 onFocus={() => { if (searchQuery.trim()) setShowSearchDropdown(true); }}
+                suppressHydrationWarning
                 className="w-full bg-[#f3f6f3] rounded-full border border-stone-300 py-1.5 pl-10 pr-4 text-xs font-semibold text-[#1C1B1F] placeholder:text-[#79747E]/60 focus:outline-none focus:ring-1 focus:ring-[#2C742F]/20"
               />
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#79747E]" />
@@ -535,6 +543,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                 }}
                 className="relative p-2 rounded-full border border-[#2C742F]/10 bg-white/40 hover:bg-white/70 text-[#1C1B1F] transition-colors focus:outline-none"
                 title={t('notifications')}
+                suppressHydrationWarning
               >
                 {unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#EA4B48] text-white text-[9px] font-black rounded-full flex items-center justify-center animate-pulse">
@@ -625,6 +634,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               onClick={() => setChatOpen(true)}
               className="relative p-2 rounded-full border border-[#2C742F]/10 bg-white/40 hover:bg-white/70 text-[#1C1B1F] transition-colors focus:outline-none"
               title="Production Copilot"
+              suppressHydrationWarning
             >
               <Bot className="w-4 h-4" />
             </button>
@@ -634,6 +644,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               onClick={() => router.push('/settings/profile')}
               className="relative p-2 rounded-full border border-[#2C742F]/10 bg-white/40 hover:bg-white/70 text-[#1C1B1F] transition-colors focus:outline-none hidden sm:flex"
               title="Settings"
+              suppressHydrationWarning
             >
               <Settings className="w-4 h-4" />
             </button>

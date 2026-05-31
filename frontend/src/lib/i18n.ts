@@ -230,7 +230,8 @@ export const translations = {
 
     // Landing page
     landingTitle1: 'AromaSys',
-    landingTitle2: 'Sistem Gudang',
+    landingTitle2a: 'Sistem',
+    landingTitle2b: 'Gudang',
     landingSub: 'Teknologi pemantauan sensorik modern dan pelacakan batch aktif untuk Sima Arome. Kelola kemurnian minyak esensial dan rantai dingin dalam satu konsol cerdas.',
     signUpBtn: 'Daftar',
     signInBtn: 'Masuk',
@@ -506,7 +507,8 @@ export const translations = {
 
     // Landing page
     landingTitle1: 'AromaSys',
-    landingTitle2: 'Warehouse System',
+    landingTitle2a: 'Warehouse',
+    landingTitle2b: 'System',
     landingSub: 'Next-generation sensory telemetry and active batch tracking for Sima Arome. Monitor essential oil purity and cold-chain metrics in one intelligent console.',
     signUpBtn: 'Sign Up',
     signInBtn: 'Sign In',
@@ -559,7 +561,7 @@ export const translations = {
 };
 
 export function useLanguage() {
-  const [lang, setLangState] = useState<Language>('id');
+  const [lang, setLangState] = useState<Language>('en');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {

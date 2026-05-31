@@ -32,22 +32,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const loadDbLanguage = async () => {
       const token = localStorage.getItem('aromasys_token');
-      if (token) {
-        try {
-          const res = await fetch(`${API_URL}/profile/settings/language`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          const data = await res.json();
-          if (data.success && data.settings?.language) {
-            const currentLang = localStorage.getItem('aromasys_language');
-            if (currentLang !== data.settings.language) {
-              localStorage.setItem('aromasys_language', data.settings.language);
-              window.dispatchEvent(new Event('languageChange'));
-            }
-          }
-        } catch (e) {
-          console.error('Error fetching db language preference:', e);
-        }
+      if (!token) return;
+      // If the user already has a local language preference, respect it — don't let the DB override.
+      // DB language is only applied on first login (no local pref set yet).
+      const existingLang = localStorage.getItem('aromasys_language');
+      if (existingLang === 'en' || existingLang === 'id') return;
+      try {
+        const res = await fetch(`${API_URL}/profile/settings/language`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        const dbLang = data.success && (data.settings?.language === 'en' || data.settings?.language === 'id')
+          ? data.settings.language
+          : 'en';
+        localStorage.setItem('aromasys_language', dbLang);
+        window.dispatchEvent(new Event('languageChange'));
+      } catch (e) {
+        console.error('Error fetching db language preference:', e);
       }
     };
 
@@ -78,17 +79,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('aromasys_user', JSON.stringify(data.user));
       localStorage.setItem('aromasys_token', data.token);
 
-      // Fetch language preference from DB after login
-      try {
-        const langRes = await fetch(`${API_URL}/profile/settings/language`, {
-          headers: { 'Authorization': `Bearer ${data.token}` }
-        });
-        const langData = await langRes.json();
-        if (langData.success && langData.settings?.language) {
-          localStorage.setItem('aromasys_language', langData.settings.language);
+      // Only apply DB language preference on login if no local pref exists yet.
+      const existingLang = localStorage.getItem('aromasys_language');
+      if (existingLang !== 'en' && existingLang !== 'id') {
+        try {
+          const langRes = await fetch(`${API_URL}/profile/settings/language`, {
+            headers: { 'Authorization': `Bearer ${data.token}` }
+          });
+          const langData = await langRes.json();
+          const dbLang = langData.success && (langData.settings?.language === 'en' || langData.settings?.language === 'id')
+            ? langData.settings.language
+            : 'en';
+          localStorage.setItem('aromasys_language', dbLang);
           window.dispatchEvent(new Event('languageChange'));
-        }
-      } catch {}
+        } catch {}
+      }
 
       return { success: true };
     } catch {

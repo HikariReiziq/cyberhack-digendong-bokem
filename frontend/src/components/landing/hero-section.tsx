@@ -45,7 +45,15 @@ export function HeroSection() {
               transition={{ duration: 0.8, ease: "easeOut", delay: 0.1 }}
               className="text-6xl md:text-8xl font-bold font-['Poppins'] leading-none text-[#BCF389] mt-2"
             >
-              {t("landingTitle2")}
+              {t("landingTitle2a")}
+            </motion.h1>
+            <motion.h1
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: "easeOut", delay: 0.15 }}
+              className="text-6xl md:text-8xl font-bold font-['Poppins'] leading-none text-[#BCF389]"
+            >
+              {t("landingTitle2b")}
             </motion.h1>
           </div>
 

@@ -101,16 +101,27 @@ export default function QCPage() {
   const startCamera = async () => {
     try {
       setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      // Set cameraActive FIRST so the <video> element mounts, then assign via useEffect
       setCameraActive(true);
-    } catch {
-      setError("Tidak dapat mengakses kamera. Pastikan izin kamera diberikan atau gunakan upload file.");
+    } catch (err) {
+      console.error("Camera access error:", err);
+      setError(
+        "Cannot access camera. Please allow camera permission in your browser, or use file upload instead."
+      );
     }
   };
+
+  // Assign stream to video element AFTER it mounts (conditional render means videoRef is null before)
+  useEffect(() => {
+    if (cameraActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch((err) => console.error("Video play error:", err));
+    }
+  }, [cameraActive]);
 
   const stopCamera = () => {
     if (streamRef.current) {
@@ -119,6 +130,7 @@ export default function QCPage() {
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
+      videoRef.current.load();
     }
     setCameraActive(false);
   };

@@ -136,11 +136,11 @@ export default function AutoReportPage() {
   const [shareToast, setShareToast] = useState(false);
 
   const steps = [
-    "Menghubungkan ke secure database AromaSys...",
-    "Melakukan query stok bahan baku dan log sensor...",
-    "Validating FIFO expiry timelines & data degradasi...",
-    "Menyusun ringkasan AI Copilot & rekomendasi...",
-    "Menyintesis struktur dokumen laporan akhir..."
+    "Connecting to AromaSys secure database...",
+    "Querying raw material stock and sensor logs...",
+    "Validating FIFO expiry timelines & degradation data...",
+    "Compiling AI Copilot summary & recommendations...",
+    "Synthesizing final report document structure..."
   ];
 
   async function fetchData() {
@@ -156,7 +156,7 @@ export default function AutoReportPage() {
       if (slotsData.success) setSlots(slotsData.slots ?? []);
       if (auditData.success) setLogs(auditData.logs ?? []);
     } catch (e: any) {
-      setError('Gagal memuat data telemetri.');
+      setError('Failed to load telemetry data.');
     } finally {
       setIsLoading(false);
     }
@@ -259,59 +259,59 @@ export default function AutoReportPage() {
       // 6. Build comprehensive prompt based on report type
       let focusedPrompt = '';
       if (selectedType === 'daily') {
-        focusedPrompt = `Analisis DAILY: Evaluasi status inventori hari ini, fokus pada:
-- Kapasitas gudang yang terpakai
-- Item dengan level stok rendah/kritis yang memerlukan tindakan segera
-- Distribusi stok per zona
-- Rekomendasi urgent untuk 24 jam ke depan`;
+        focusedPrompt = `DAILY Analysis: Evaluate today's inventory status, focusing on:
+- Current warehouse capacity utilization
+- Low-stock/critical items requiring immediate action
+- Stock distribution per zone
+- Urgent recommendations for the next 24 hours`;
       } else if (selectedType === 'weekly') {
-        focusedPrompt = `Analisis WEEKLY: Evaluasi tren mingguan, fokus pada:
-- Efisiensi FIFO dan rotasi stok
-- Batch yang mendekati kedaluwarsa dalam 7-14 hari
-- Risiko degradasi kualitas berdasarkan suhu per zona
-- Rekomendasi rotasi stok prioritas`;
+        focusedPrompt = `WEEKLY Analysis: Evaluate weekly trends, focusing on:
+- FIFO efficiency and stock rotation
+- Batches approaching expiry within 7–14 days
+- Quality degradation risk based on zone temperatures
+- Priority stock rotation recommendations`;
       } else {
-        focusedPrompt = `Analisis MONTHLY: Evaluasi performa bulanan, fokus pada:
-- Tren utilisasi gudang
-- Pola konsumsi dan penyimpanan
-- Efisiensi operasional keseluruhan
-- Rekomendasi optimasi kapasitas & inventory management`;
+        focusedPrompt = `MONTHLY Analysis: Evaluate monthly performance, focusing on:
+- Warehouse utilization trends
+- Consumption and storage patterns
+- Overall operational efficiency
+- Capacity optimization & inventory management recommendations`;
       }
 
-      const prompt = `Kamu adalah AI analis gudang profesional AromaSys dengan expertise dalam manajemen inventory, cold-chain monitoring, dan quality assurance.
+      const prompt = `You are a professional AromaSys warehouse AI analyst with expertise in inventory management, cold-chain monitoring, and quality assurance.
 
 === LIVE WAREHOUSE CONTEXT ===
 📊 INVENTORY METRICS:
-- Total stok: ${Math.round(totalStock)} kg/L equivalent
-- Total item terkelola: ${inventory.length} batch
-- Item low stock/kritis: ${lowStockCount} item
-- Batch mendekati kedaluwarsa (7 hari): ${nearExpiry} batch
+- Total stock: ${Math.round(totalStock)} kg/L equivalent
+- Total managed items: ${inventory.length} batches
+- Low stock/critical items: ${lowStockCount} items
+- Batches nearing expiry (7 days): ${nearExpiry} batches
 
 🏢 ZONE UTILIZATION:
-${zoneContext.map(z => `- ${z.zone}: ${z.occupied}/${z.slots} slot (${z.utilization}%) | Suhu aktual: ${z.currentTemp}°C`).join('\n')}
+${zoneContext.map(z => `- ${z.zone}: ${z.occupied}/${z.slots} slots (${z.utilization}%) | Current temp: ${z.currentTemp}°C`).join('\n')}
 
 ⚠️ CRITICAL ITEMS (Immediate Action Required):
-${criticalItems.length > 0 ? criticalItems.map(i => `- ${i.name} (${i.qty} ${i.unit}): Status ${i.status}, Kedaluwarsa ${i.daysLeft} hari, di zona ${i.zone}`).join('\n') : '- Tidak ada item kritis'}
+${criticalItems.length > 0 ? criticalItems.map(i => `- ${i.name} (${i.qty} ${i.unit}): Status ${i.status}, expires in ${i.daysLeft} days, zone ${i.zone}`).join('\n') : '- No critical items'}
 
-📦 NEAR-EXPIRY ITEMS (7-14 hari):
-${nearExpiryItems.length > 0 ? nearExpiryItems.map(i => `- ${i.name} (${i.category}): ${i.daysLeft} hari sisa, zona ${i.zone}`).join('\n') : '- Tidak ada item mendekati kedaluwarsa'}
+📦 NEAR-EXPIRY ITEMS (7–14 days):
+${nearExpiryItems.length > 0 ? nearExpiryItems.map(i => `- ${i.name} (${i.category}): ${i.daysLeft} days remaining, zone ${i.zone}`).join('\n') : '- No items nearing expiry'}
 
 📅 REPORT PERIOD: ${startDate} to ${endDate}
 
-=== ANALISIS YANG DIMINTA ===
+=== REQUESTED ANALYSIS ===
 ${focusedPrompt}
 
-Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
-1. Menjelaskan kondisi spesifik gudang saat ini
-2. Mengidentifikasi risiko nyata berdasarkan data (suhu, kedaluwarsa, stok)
-3. Memberikan 2-3 rekomendasi operasional yang segera dapat ditindaklanjuti
-4. Jika ada item kritis/expired: prioritaskan tindakan disposal/rotasi
-5. Jika ada zona bermasalah (suhu, utilitas): jelaskan dampaknya`;
+Provide a concise analysis (3–5 sentences) in English that:
+1. Describes the current specific warehouse conditions
+2. Identifies real risks based on the data (temperature, expiry, stock)
+3. Gives 2–3 immediately actionable operational recommendations
+4. If critical/expired items exist: prioritize disposal/rotation actions
+5. If any zone has issues (temperature, utilization): explain the impact`;
 
       const result = await callAI(prompt, 'chatbot');
       setAiAnalysis(result);
     } catch (e: any) {
-      setAiAnalysis("Gagal memuat analisis AI. Silakan coba lagi.");
+      setAiAnalysis("Failed to load AI analysis. Please try again.");
     } finally {
       setIsRefreshingAI(false);
     }
@@ -409,13 +409,13 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
     return {
       daily: {
         title: "Daily Inventory Status",
-        subtitle: "Jumlah stok bahan baku aktif, alarm level rendah, dan sisa kapasitas saat ini.",
+        subtitle: "Active raw material stock count, low-level alerts, and current remaining capacity.",
         metrics: [
           {
             label: "Total Botanical Stock",
             value: metricsData.daily.totalBotanical.toLocaleString(),
             unit: "kg / L equivalent",
-            trend: `Data aktif dari ${inventory.length} batch`,
+            trend: `Live data from ${inventory.length} batches`,
             trendType: "up",
             icon: FileText,
             iconColor: "text-lime-800",
@@ -426,7 +426,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
             label: "Occupied Slots",
             value: metricsData.daily.pending.toString(),
             unit: "slots",
-            trend: `${metricsData.daily.emptySlots} slot kosong tersisa`,
+            trend: `${metricsData.daily.emptySlots} empty slots remaining`,
             trendType: "info",
             icon: FileSpreadsheet,
             iconColor: "text-amber-500",
@@ -437,7 +437,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
             label: "Low Stock Alerts",
             value: metricsData.daily.lowStock.toString(),
             unit: "items",
-            trend: "Memerlukan penanganan segera",
+            trend: "Requires immediate attention",
             trendType: "warning",
             icon: AlertTriangle,
             iconColor: "text-red-600",
@@ -450,18 +450,18 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
           { name: "Lavender Oil (Grade A)", current: 850, max: 1000, color: "bg-lime-800", labelStyle: "text-green-950" },
           { name: "Eucalyptus Crude", current: 450, max: 600, color: "bg-[#4E7D22]", labelStyle: "text-green-950" }
         ],
-        copilot: `Stok inventori di gudang AromaSys terpantau stabil. Ada ${metricsData.daily.lowStock} item dengan level peringatan rendah/kritis. Direkomendasikan untuk melakukan inspeksi visual pada slot yang ditandai status non-Optimal guna mencegah penurunan kualitas.`,
-        trendAnalysis: `Tren harian menunjukkan tingkat utilisasi gudang ${Math.round((metricsData.daily.pending / (slots.length || 30)) * 100)}% dengan ${metricsData.daily.emptySlots} slot kosong tersedia. Pergerakan stok stabil dengan ${metricsData.daily.lowStock} item memerlukan perhatian segera. Proyeksi kapasitas menunjukkan ketersediaan ruang yang memadai untuk operasi 24 jam ke depan.`
+        copilot: `AromaSys inventory stock is currently stable. ${metricsData.daily.lowStock} item(s) have low/critical alert levels. Visual inspection is recommended for slots flagged as non-Optimal to prevent quality degradation.`,
+        trendAnalysis: `Daily trend shows warehouse utilization at ${Math.round((metricsData.daily.pending / (slots.length || 30)) * 100)}% with ${metricsData.daily.emptySlots} slots available. Stock movement is stable with ${metricsData.daily.lowStock} item(s) requiring immediate attention. Capacity projections indicate sufficient space for the next 24 hours of operations.`
       },
       weekly: {
         title: "Weekly FIFO & Expiry",
-        subtitle: "Laporan risiko degradasi bahan baku dan jadwal rotasi stok.",
+        subtitle: "Raw material degradation risk report and stock rotation schedule.",
         metrics: [
           {
             label: "Near Expiry Batches",
             value: metricsData.weekly.nearExpiry.toString(),
             unit: "lots",
-            trend: "Kedaluwarsa dalam 7 hari",
+            trend: "Expiring within 7 days",
             trendType: "warning",
             icon: AlertTriangle,
             iconColor: "text-red-700",
@@ -472,7 +472,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
             label: "Compliance Rate",
             value: `${metricsData.weekly.compliance}%`,
             unit: "optimal",
-            trend: "Batch optimal non-expired",
+            trend: "Non-expired optimal batches",
             trendType: "up",
             icon: FileSpreadsheet,
             iconColor: "text-lime-800",
@@ -483,7 +483,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
             label: "Quality Audits",
             value: metricsData.weekly.logsCount.toString(),
             unit: "activities",
-            trend: "Log audit aktivitas tercatat",
+            trend: "Audit activity logs recorded",
             trendType: "success",
             icon: CheckCircle2,
             iconColor: "text-emerald-600",
@@ -495,18 +495,18 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
         reserves: sortedAging.length > 0 ? sortedAging : [
           { name: "Patchouli Oil (LOT-PO-230526)", current: 5, max: 90, color: "bg-red-600", labelStyle: "text-red-600 font-bold" }
         ],
-        copilot: `Audit mingguan mendeteksi ${metricsData.weekly.nearExpiry} batch mendekati limit kedaluwarsa. Ikuti protokol rotasi FIFO secara ketat dan prioritaskan batch-batch tersebut dalam jadwal ekstraksi produksi berikutnya.`,
-        trendAnalysis: `Tren mingguan menunjukkan ${metricsData.weekly.nearExpiry} batch mendekati kedaluwarsa dalam 7 hari. Tingkat kepatuhan FIFO berada di ${metricsData.weekly.compliance}% dengan ${metricsData.weekly.logsCount} aktivitas audit tercatat. Rekomendasi: percepat rotasi stok untuk batch kritis dan tingkatkan frekuensi inspeksi kualitas.`
+        copilot: `Weekly audit detected ${metricsData.weekly.nearExpiry} batch(es) approaching expiry limit. Strictly follow the FIFO rotation protocol and prioritize these batches in the next production extraction schedule.`,
+        trendAnalysis: `Weekly trend shows ${metricsData.weekly.nearExpiry} batch(es) approaching expiry within 7 days. FIFO compliance rate stands at ${metricsData.weekly.compliance}% with ${metricsData.weekly.logsCount} audit activities recorded. Recommendation: accelerate rotation for critical batches and increase quality inspection frequency.`
       },
       monthly: {
         title: "Monthly Consumption Log",
-        subtitle: "Tren log konsumsi historis bulanan dan analisis varians stok.",
+        subtitle: "Monthly historical consumption log trends and stock variance analysis.",
         metrics: [
           {
             label: "Total Items Managed",
             value: metricsData.monthly.totalItems.toString(),
             unit: "batches",
-            trend: "Terdaftar di master data",
+            trend: "Registered in master data",
             trendType: "up",
             icon: FileText,
             iconColor: "text-[#2C742F]",
@@ -517,7 +517,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
             label: "Storage Efficiency",
             value: `${Math.round((metricsData.daily.pending / (slots.length || 30)) * 100)}%`,
             unit: "occupied",
-            trend: "Kapasitas gudang terpakai",
+            trend: "Warehouse capacity utilized",
             trendType: "success",
             icon: CheckCircle2,
             iconColor: "text-lime-800",
@@ -528,7 +528,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
             label: "Audit Logs Logged",
             value: logs.length.toString(),
             unit: "records",
-            trend: "Log operasional lengkap",
+            trend: "Complete operational logs",
             trendType: "info",
             icon: FileSpreadsheet,
             iconColor: "text-blue-500",
@@ -540,8 +540,8 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
         reserves: sortedReserves.length > 0 ? sortedReserves : [
           { name: "Lavender Extract Base", current: 3120, max: 3500, color: "bg-lime-800", labelStyle: "text-green-950" }
         ],
-        copilot: `Efisiensi penyimpanan bulan ini berada pada tingkat optimal. Data audit mencatat aktivitas log yang sangat transparan tanpa adanya deviasi anomali sistem yang signifikan.`,
-        trendAnalysis: `Tren bulanan menunjukkan efisiensi penyimpanan ${Math.round((metricsData.daily.pending / (slots.length || 30)) * 100)}% dengan total ${metricsData.monthly.totalItems} item terkelola. Konsumsi material stabil tanpa anomali signifikan. Proyeksi kapasitas bulanan menunjukkan kebutuhan ekspansi minimal dengan tingkat rotasi stok yang sehat.`
+        copilot: `Storage efficiency this month is at an optimal level. Audit data records highly transparent log activity with no significant system anomaly deviations detected.`,
+        trendAnalysis: `Monthly trend shows storage efficiency at ${Math.round((metricsData.daily.pending / (slots.length || 30)) * 100)}% with a total of ${metricsData.monthly.totalItems} managed items. Material consumption is stable with no significant anomalies. Monthly capacity projections indicate minimal expansion needs with a healthy stock rotation rate.`
       }
     };
   }, [inventory, slots, logs, metricsData]);
@@ -617,7 +617,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
         <div className="w-10 h-10 border-4 border-[#2C742F] border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-stone-500 font-semibold">Memuat Data Telemetri...</p>
+        <p className="text-sm text-stone-500 font-semibold">{t('loadingReport')}</p>
       </div>
     );
   }
@@ -628,7 +628,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
         <AlertTriangle className="w-12 h-12 text-[#EA4B48]" />
         <p className="text-sm font-bold text-neutral-800">{error}</p>
         <button onClick={fetchData} className="px-5 py-2 rounded-full bg-[#2C742F] text-white font-bold text-xs hover:bg-[#235a26] transition-all active:scale-95">
-          Coba Lagi
+          Try Again
         </button>
       </div>
     );
@@ -677,7 +677,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
               <FileSpreadsheet className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-green-950 text-base font-bold">Parameter Laporan</h3>
+              <h3 className="text-green-950 text-base font-bold">{t('reportConfig')}</h3>
               <p className="text-stone-500 text-xs font-semibold">Automated Telemetry Config</p>
             </div>
           </div>
@@ -685,12 +685,12 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
           <div className="space-y-4">
             {/* Report Type */}
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-stone-700 uppercase tracking-wider block">Jenis Laporan</label>
+              <label className="text-[10px] font-bold text-stone-700 uppercase tracking-wider block">Report Type</label>
               <div className="space-y-2">
                 {[
-                  { id: "daily", title: "Daily Inventory Status", desc: "Status stok harian, alarm batas minimum, dan sisa kapasitas." },
-                  { id: "weekly", title: "Weekly FIFO & Expiry", desc: "Rotasi mingguan, efisiensi FIFO, dan lot mendekati kedaluwarsa." },
-                  { id: "monthly", title: "Monthly Consumption Log", desc: "Tren utilitas bulanan dan data aktivitas audit komprehensif." }
+                  { id: "daily", title: "Daily Inventory Status", desc: "Daily stock status, low-stock alerts, and remaining capacity." },
+                  { id: "weekly", title: "Weekly FIFO & Expiry", desc: "Weekly rotation, FIFO efficiency, and lots nearing expiry." },
+                  { id: "monthly", title: "Monthly Consumption Log", desc: "Monthly utilization trends and comprehensive audit activity data." }
                 ].map(opt => (
                   <button
                     key={opt.id}
@@ -719,7 +719,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
 
             {/* Timeframe */}
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-stone-700 uppercase tracking-wider block">Rentang Waktu</label>
+              <label className="text-[10px] font-bold text-stone-700 uppercase tracking-wider block">Time Range</label>
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="date"
@@ -738,7 +738,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
 
             {/* Format */}
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-stone-700 uppercase tracking-wider block">Format Ekspor</label>
+              <label className="text-[10px] font-bold text-stone-700 uppercase tracking-wider block">{t('reportFormat')}</label>
               <div className="flex gap-2">
                 {[
                   { id: "pdf", label: "PDF Report", icon: FileText },
@@ -765,16 +765,16 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
 
             {/* Custom Notes */}
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-stone-700 uppercase tracking-wider block">Catatan Kustom</label>
+              <label className="text-[10px] font-bold text-stone-700 uppercase tracking-wider block">Custom Notes</label>
               <textarea
                 value={customNotes}
                 onChange={(e) => setCustomNotes(e.target.value)}
-                placeholder="Tambahkan catatan atau anotasi untuk laporan PDF..."
+                placeholder="Add notes or annotations for the PDF report..."
                 rows={4}
                 className="w-full bg-white px-3 py-2 rounded-lg border border-[#AAE970]/20 text-green-950 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#2C742F] resize-none placeholder:text-stone-400"
               />
-              <p className="text-[9px] text-stone-400 font-semibold">Mendukung format Markdown (bold, italic, list, tabel)</p>
-              <p className="text-[9px] text-stone-400 font-semibold">Catatan akan disertakan dalam ekspor PDF, tidak dalam Excel.</p>
+              <p className="text-[9px] text-stone-400 font-semibold">Supports Markdown formatting (bold, italic, lists, tables)</p>
+              <p className="text-[9px] text-stone-400 font-semibold">Notes are included in PDF exports only, not in Excel.</p>
             </div>
 
             {/* Submit */}
@@ -784,7 +784,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
               className="w-full py-3 bg-[#2C742F] hover:bg-[#366306] text-white rounded-full flex items-center justify-center gap-2 font-bold text-sm shadow-[0px_4px_12px_rgba(44,116,47,0.2)] active:scale-95 transition-all disabled:opacity-50"
             >
               <Sparkles className="w-4.5 h-4.5 text-white animate-pulse" />
-              <span>Unduh Laporan Telemetri</span>
+              <span>{t('generateReport')}</span>
             </button>
           </div>
         </motion.div>
@@ -801,7 +801,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
             <div>
               <span className="inline-flex items-center gap-1.5 text-green-950 text-[10px] font-bold uppercase tracking-wider">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                <span>Live Preview Laporan</span>
+                <span>Live Report Preview</span>
               </span>
               <h2 className="text-[#2C742F] text-2xl font-black mt-1">{currentPreview.title}</h2>
               <p className="text-stone-500 text-xs font-semibold">{currentPreview.subtitle}</p>
@@ -817,14 +817,14 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
 
           {/* Report Metadata */}
           <div className="bg-[#F5FBF3]/50 rounded-xl border border-[#AAE970]/10 p-4">
-            <h4 className="text-green-950 text-xs font-bold uppercase tracking-wider mb-3">Metadata Laporan</h4>
+            <h4 className="text-green-950 text-xs font-bold uppercase tracking-wider mb-3">Report Metadata</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
               <div className="flex justify-between sm:justify-start sm:gap-2">
-                <span className="text-stone-500 font-semibold">Tanggal Laporan Dibuat:</span>
-                <span className="text-green-950 font-bold">{new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}</span>
+                <span className="text-stone-500 font-semibold">Generated On:</span>
+                <span className="text-green-950 font-bold">{new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })}</span>
               </div>
               <div className="flex justify-between sm:justify-start sm:gap-2">
-                <span className="text-stone-500 font-semibold">Dibuat Oleh:</span>
+                <span className="text-stone-500 font-semibold">Generated By:</span>
                 <span className="text-green-950 font-bold">{user?.name ?? 'Unknown'}</span>
               </div>
               <div className="flex justify-between sm:justify-start sm:gap-2">
@@ -832,8 +832,8 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
                 <span className="text-green-950 font-bold">{user?.role ?? '-'}</span>
               </div>
               <div className="flex justify-between sm:justify-start sm:gap-2">
-                <span className="text-stone-500 font-semibold">Periode:</span>
-                <span className="text-green-950 font-bold">{startDate} - {endDate}</span>
+                <span className="text-stone-500 font-semibold">Period:</span>
+                <span className="text-green-950 font-bold">{startDate} – {endDate}</span>
               </div>
             </div>
           </div>
@@ -882,7 +882,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
                     <div className="flex justify-between items-center text-xs font-semibold">
                       <span className={res.labelStyle}>{res.name}</span>
                       <span className="text-stone-500 font-bold">
-                        {Math.round(res.current).toLocaleString()} / {Math.round(res.max).toLocaleString()} {selectedType === "weekly" ? "hari" : "kg"}
+                        {Math.round(res.current).toLocaleString()} / {Math.round(res.max).toLocaleString()} {selectedType === "weekly" ? "days" : "kg"}
                       </span>
                     </div>
 
@@ -931,7 +931,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
                 </div>
               ) : (
                 <p className="text-stone-600 text-xs font-semibold leading-relaxed">
-                  {isRefreshingAI ? "Menganalisis data dengan AI..." : aiAnalysis}
+                  {isRefreshingAI ? "Analyzing data with AI..." : aiAnalysis}
                 </p>
               )}
             </div>
@@ -959,7 +959,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
               </div>
 
               <div className="flex flex-col gap-1 text-left flex-1">
-                <h4 className="text-amber-900 text-xs font-bold uppercase tracking-wider">Catatan Kustom</h4>
+                <h4 className="text-amber-900 text-xs font-bold uppercase tracking-wider">Custom Notes</h4>
                 <div 
                   className="text-amber-800 text-xs font-semibold leading-relaxed prose prose-xs max-w-none"
                   dangerouslySetInnerHTML={{ __html: renderMarkdown(customNotes) }}
@@ -988,8 +988,8 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
               </div>
 
               <div className="mt-4">
-                <h3 className="text-green-950 text-base font-bold">Menyusun Dokumen...</h3>
-                <p className="text-stone-500 text-xs mt-1">Laporan telemetri sedang dikompilasi secara real-time.</p>
+                <h3 className="text-green-950 text-base font-bold">Compiling Document...</h3>
+                <p className="text-stone-500 text-xs mt-1">Your telemetry report is being compiled in real-time.</p>
               </div>
 
               {/* Progress */}
@@ -1002,7 +1002,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
 
               <div className="mt-4 min-h-6 flex items-center justify-center">
                 <p className="text-[#2C742F] text-xs font-bold">
-                  {steps[generationStep] || "Menyelesaikan proses..."}
+                  {steps[generationStep] || "Finishing up..."}
                 </p>
               </div>
             </motion.div>
@@ -1032,8 +1032,8 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
                 <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-md text-[#2C742F]">
                   <CheckCircle2 className="w-7 h-7" />
                 </div>
-                <h3 className="text-green-950 text-lg font-bold">Laporan Siap Diunduh!</h3>
-                <p className="text-stone-500 text-xs font-semibold">Berkas laporan telemetri Anda telah selesai disusun.</p>
+                <h3 className="text-green-950 text-lg font-bold">Report Ready!</h3>
+                <p className="text-stone-500 text-xs font-semibold">Your telemetry report has been compiled successfully.</p>
               </div>
 
               <div className="p-6 space-y-6">
@@ -1075,7 +1075,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
                     className="py-2.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-700 rounded-full flex items-center justify-center gap-2 font-bold text-xs active:scale-95 transition-all outline-none"
                   >
                     <Share2 className="w-4 h-4 text-stone-500" />
-                    <span>Bagikan Laporan</span>
+                    <span>Share Report</span>
                   </button>
                 </div>
               </div>
@@ -1095,7 +1095,7 @@ Berikan analisis konkret (3-5 kalimat) dalam Bahasa Indonesia yang:
             className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 bg-[#2C742F] text-white rounded-xl shadow-xl text-xs font-bold"
           >
             <Share2 className="w-3.5 h-3.5" />
-            Tautan laporan disalin ke papan klip!
+            Report link copied to clipboard!
           </motion.div>
         )}
       </AnimatePresence>

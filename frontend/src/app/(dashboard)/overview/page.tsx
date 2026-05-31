@@ -23,6 +23,8 @@ import {
   Line,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
   Cell,
   XAxis,
   YAxis,
@@ -79,7 +81,12 @@ function WeeklyStockChart({ data }: { data?: Array<{ date: string; count: number
 
   return (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#D7E5D8]">
-      <h3 className="text-lg font-bold text-[#1C1B1F] mb-4">Weekly Stock Trend</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-[#1C1B1F]">Weekly Stock Trend</h3>
+        <Link href="/inventory-master" className="text-sm text-[#2C742F] font-semibold hover:underline">
+          View All
+        </Link>
+      </div>
       <div className="w-full h-[280px]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
@@ -154,9 +161,14 @@ function ZoneSummaryCards({
   };
 
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#D7E5D8]">
-      <h3 className="text-lg font-bold text-[#1C1B1F] mb-4">Zone Summary</h3>
-      <div className="w-full h-[280px]">
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#D7E5D8] h-full">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-[#1C1B1F]">Zone Summary</h3>
+        <Link href="/floor-plan" className="text-sm text-[#2C742F] font-semibold hover:underline">
+          View All
+        </Link>
+      </div>
+      <div className="w-full h-[220px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
@@ -216,10 +228,15 @@ function ExpiryAlertsPanel({
   return (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#D7E5D8]">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold text-[#1C1B1F]">Expiry Alerts</h3>
-        <span className="text-xs bg-red-100 text-[#EA4B48] px-2.5 py-0.5 rounded-full font-semibold">
-          {data.length} items
-        </span>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-bold text-[#1C1B1F]">Expiry Alerts</h3>
+          <span className="text-xs bg-red-100 text-[#EA4B48] px-2.5 py-0.5 rounded-full font-semibold">
+            {data.length} items
+          </span>
+        </div>
+        <Link href="/fifo-expiry" className="text-sm text-[#2C742F] font-semibold hover:underline">
+          View All
+        </Link>
       </div>
       <div className="space-y-3 max-h-64 overflow-y-auto pr-4">
         {data.map((item) => (
@@ -251,40 +268,98 @@ function ExpiryAlertsPanel({
 
 // ─── QuickStats ──────────────────────────────────────────────────────────────
 
+function CircleStat({
+  value,
+  label,
+  percentage,
+  color,
+}: {
+  value: number;
+  label: string;
+  percentage: number;
+  color: string;
+}) {
+  const clamped = Math.min(100, Math.max(0, percentage));
+  const chartData = [{ v: clamped }, { v: 100 - clamped }];
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative w-28 h-28">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              innerRadius="62%"
+              outerRadius="82%"
+              startAngle={90}
+              endAngle={-270}
+              dataKey="v"
+              strokeWidth={0}
+            >
+              <Cell fill={color} />
+              <Cell fill="#F3F4F6" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-2xl font-bold text-[#1C1B1F]">{value}</span>
+        </div>
+      </div>
+      <span className="text-[11px] text-[#79747E] font-medium text-center leading-tight max-w-[80px]">
+        {label}
+      </span>
+    </div>
+  );
+}
+
 function QuickStats({
   data,
+  totalItems,
 }: {
   data?: { totalCategories: number; avgDaysToExpiry: number; expiredCount: number };
+  totalItems?: number;
 }) {
   if (!data) return null;
 
-  const items = [
+  const avgColor =
+    data.avgDaysToExpiry > 30
+      ? "#2C742F"
+      : data.avgDaysToExpiry > 14
+      ? "#F59E0B"
+      : "#EA4B48";
+
+  const stats = [
     {
       value: data.totalCategories,
       label: "Total Categories",
+      percentage: Math.min(100, (data.totalCategories / 20) * 100),
+      color: "#2C742F",
     },
     {
       value: data.avgDaysToExpiry,
       label: "Avg Days to Expiry",
+      percentage: Math.min(100, (data.avgDaysToExpiry / 90) * 100),
+      color: avgColor,
     },
     {
       value: data.expiredCount,
       label: "Expired Items",
+      percentage: totalItems
+        ? Math.min(100, (data.expiredCount / totalItems) * 100)
+        : data.expiredCount > 0
+        ? 100
+        : 0,
+      color: data.expiredCount > 0 ? "#EA4B48" : "#2C742F",
     },
   ];
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-gray-200">
-      <h3 className="text-lg font-bold text-[#1C1B1F] mb-4">Quick Stats</h3>
-      <div className="grid grid-cols-3 gap-4">
-        {items.map(({ value, label }) => (
-          <div
-            key={label}
-            className="flex flex-col items-center gap-1 p-4 rounded-lg border border-gray-100 text-center"
-          >
-            <span className="text-2xl font-bold text-[#1C1B1F]">{value}</span>
-            <span className="text-[11px] text-[#79747E] font-medium leading-tight">{label}</span>
-          </div>
+    <div className="bg-white rounded-2xl p-6 border border-[#D7E5D8] shadow-sm h-full">
+      <h3 className="text-lg font-bold text-[#1C1B1F] mb-6">Quick Stats</h3>
+      <div className="flex items-center justify-around gap-2">
+        {stats.map(({ value, label, percentage, color }) => (
+          <CircleStat key={label} value={value} label={label} percentage={percentage} color={color} />
         ))}
       </div>
     </div>
@@ -296,9 +371,14 @@ function QuickStats({
 function ActivityTimeline({ activities }: { activities: Array<{ id: number; time: string; user: string; detail: string }> }) {
   if (activities.length === 0) {
     return (
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#D7E5D8]">
-        <h3 className="text-lg font-bold text-[#1C1B1F] mb-4">Recent Activity</h3>
-        <div className="flex items-center justify-center h-32 text-sm text-[#79747E]">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#D7E5D8] h-full flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-[#1C1B1F]">Recent Activity</h3>
+          <Link href="/audit-trail" className="text-sm text-[#2C742F] font-semibold hover:underline">
+            View All
+          </Link>
+        </div>
+        <div className="flex-1 flex items-center justify-center text-sm text-[#79747E]">
           No recent activity
         </div>
       </div>
@@ -306,9 +386,14 @@ function ActivityTimeline({ activities }: { activities: Array<{ id: number; time
   }
 
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#D7E5D8]">
-      <h3 className="text-lg font-bold text-[#1C1B1F] mb-4">Recent Activity</h3>
-      <div className="space-y-4 max-h-64 overflow-y-auto">
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#D7E5D8] h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4 shrink-0">
+        <h3 className="text-lg font-bold text-[#1C1B1F]">Recent Activity</h3>
+        <Link href="/audit-trail" className="text-sm text-[#2C742F] font-semibold hover:underline">
+          View All
+        </Link>
+      </div>
+      <div className="space-y-4 flex-1 overflow-y-auto">
         {activities.map((act) => (
           <div key={act.id} className="flex items-start gap-3">
             <span className="text-xs text-[#79747E] font-medium w-12 shrink-0 pt-0.5">
@@ -619,23 +704,23 @@ export default function DashboardPage() {
         <WeeklyStockChart data={dashboardStats?.weeklyTrend} />
       </motion.div>
 
-      {/* Quick Stats */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.25 }}
-      >
-        <QuickStats data={dashboardStats?.quickStats} />
-      </motion.div>
-
-      {/* Zone Summary Cards */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.3 }}
-      >
-        <ZoneSummaryCards data={dashboardStats?.zoneSummary} />
-      </motion.div>
+      {/* Quick Stats (left) + Zone Summary (right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.25 }}
+        >
+          <QuickStats data={dashboardStats?.quickStats} totalItems={inventory.length} />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
+        >
+          <ZoneSummaryCards data={dashboardStats?.zoneSummary} />
+        </motion.div>
+      </div>
 
       {/* Expiry Alerts */}
       <motion.div
@@ -647,13 +732,13 @@ export default function DashboardPage() {
       </motion.div>
 
       {/* Main Content Grid — 2:1 ratio */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         {/* Left: Items Requiring Immediate Use */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.4 }}
-          className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-[#D7E5D8] overflow-hidden"
+          className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-[#D7E5D8] overflow-hidden flex flex-col"
         >
           <div className="px-6 py-4 border-b border-[#D7E5D8] flex items-center justify-between">
             <h3 className="text-lg font-bold text-[#1C1B1F]">Items Requiring Immediate Use</h3>
@@ -664,7 +749,7 @@ export default function DashboardPage() {
               View All
             </Link>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto flex-1">
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-gray-100 text-xs text-[#79747E] font-semibold uppercase tracking-wider">
@@ -749,6 +834,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.45 }}
+          className="flex flex-col"
         >
           <ActivityTimeline activities={displayActivities} />
         </motion.div>

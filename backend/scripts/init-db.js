@@ -22,21 +22,32 @@ function daysAgo(days) {
 }
 
 const INVENTORY = [
+  // Zone A - HIGH CAPACITY (5/6 = 83%) = RED
   { id: 'INV-001', name: 'Tepung Terigu Cakra', category: 'Tepung', qty: 500, unit: 'kg', location: 'A-1', zone: 'A', dateIn: daysAgo(30), expiry: daysFromNow(60), status: 'Aman' },
   { id: 'INV-002', name: 'Gula Pasir Putih', category: 'Gula', qty: 300, unit: 'kg', location: 'A-2', zone: 'A', dateIn: daysAgo(45), expiry: daysFromNow(15), status: 'Warning' },
-  { id: 'INV-003', name: 'Minyak Goreng Sawit', category: 'Minyak', qty: 200, unit: 'liter', location: 'B-1', zone: 'B', dateIn: daysAgo(20), expiry: daysFromNow(90), status: 'Aman' },
-  { id: 'INV-004', name: 'Pewarna Makanan Merah', category: 'Pewarna', qty: 50, unit: 'liter', location: 'B-2', zone: 'B', dateIn: daysAgo(60), expiry: daysFromNow(5), status: 'Kritis' },
-  { id: 'INV-005', name: 'Vanilla Essence', category: 'Essence', qty: 25, unit: 'liter', location: 'C-1', zone: 'C', dateIn: daysAgo(10), expiry: daysFromNow(120), status: 'Aman' },
-  { id: 'INV-006', name: 'Sodium Benzoat', category: 'Pengawet', qty: 100, unit: 'kg', location: 'E-1', zone: 'E', dateIn: daysAgo(15), expiry: daysFromNow(180), status: 'Aman' },
-  { id: 'INV-007', name: 'Susu Bubuk Full Cream', category: 'Susu', qty: 150, unit: 'kg', location: 'D-1', zone: 'D', dateIn: daysAgo(5), expiry: daysFromNow(45), status: 'Aman' },
-  { id: 'INV-008', name: 'Cokelat Bubuk Premium', category: 'Cokelat', qty: 80, unit: 'kg', location: 'D-2', zone: 'D', dateIn: daysAgo(25), expiry: daysFromNow(3), status: 'Kritis' },
-  { id: 'INV-009', name: 'Kayu Manis Bubuk', category: 'Rempah', qty: 30, unit: 'kg', location: 'C-2', zone: 'C', dateIn: daysAgo(40), expiry: daysFromNow(25), status: 'Warning' },
-  { id: 'INV-010', name: 'Asam Sitrat', category: 'Kimia', qty: 60, unit: 'kg', location: 'E-2', zone: 'E', dateIn: daysAgo(8), expiry: daysFromNow(200), status: 'Aman' },
   { id: 'INV-011', name: 'Tepung Maizena', category: 'Tepung', qty: 200, unit: 'kg', location: 'A-3', zone: 'A', dateIn: daysAgo(12), expiry: daysFromNow(75), status: 'Aman' },
   { id: 'INV-012', name: 'Gula Merah', category: 'Gula', qty: 100, unit: 'kg', location: 'A-4', zone: 'A', dateIn: daysAgo(50), expiry: daysFromNow(-2), status: 'Expired' },
+  { id: 'INV-016', name: 'Baking Powder Premium', category: 'Bahan Kue', qty: 150, unit: 'kg', location: 'A-5', zone: 'A', dateIn: daysAgo(20), expiry: daysFromNow(90), status: 'Aman' },
+  
+  // Zone B - MEDIUM CAPACITY (4/6 = 67%) = YELLOW
+  { id: 'INV-003', name: 'Minyak Goreng Sawit', category: 'Minyak', qty: 200, unit: 'liter', location: 'B-1', zone: 'B', dateIn: daysAgo(20), expiry: daysFromNow(90), status: 'Aman' },
+  { id: 'INV-004', name: 'Pewarna Makanan Merah', category: 'Pewarna', qty: 50, unit: 'liter', location: 'B-2', zone: 'B', dateIn: daysAgo(60), expiry: daysFromNow(5), status: 'Kritis' },
   { id: 'INV-013', name: 'Minyak Kelapa', category: 'Minyak', qty: 120, unit: 'liter', location: 'B-3', zone: 'B', dateIn: daysAgo(35), expiry: daysFromNow(40), status: 'Aman' },
-  { id: 'INV-014', name: 'Butter Unsalted', category: 'Susu', qty: 75, unit: 'kg', location: 'D-3', zone: 'D', dateIn: daysAgo(3), expiry: daysFromNow(20), status: 'Warning' },
   { id: 'INV-015', name: 'Pewarna Kuning Sunset', category: 'Pewarna', qty: 40, unit: 'liter', location: 'B-4', zone: 'B', dateIn: daysAgo(70), expiry: daysFromNow(-5), status: 'Expired' },
+  
+  // Zone C - LOW CAPACITY (2/6 = 33%) = GREEN
+  { id: 'INV-005', name: 'Vanilla Essence', category: 'Essence', qty: 25, unit: 'liter', location: 'C-1', zone: 'C', dateIn: daysAgo(10), expiry: daysFromNow(120), status: 'Aman' },
+  { id: 'INV-009', name: 'Kayu Manis Bubuk', category: 'Rempah', qty: 30, unit: 'kg', location: 'C-2', zone: 'C', dateIn: daysAgo(40), expiry: daysFromNow(25), status: 'Warning' },
+  
+  // Zone D - HIGH CAPACITY (5/6 = 83%) = RED
+  { id: 'INV-007', name: 'Susu Bubuk Full Cream', category: 'Susu', qty: 150, unit: 'kg', location: 'D-1', zone: 'D', dateIn: daysAgo(5), expiry: daysFromNow(45), status: 'Aman' },
+  { id: 'INV-008', name: 'Cokelat Bubuk Premium', category: 'Cokelat', qty: 80, unit: 'kg', location: 'D-2', zone: 'D', dateIn: daysAgo(25), expiry: daysFromNow(3), status: 'Kritis' },
+  { id: 'INV-014', name: 'Butter Unsalted', category: 'Susu', qty: 75, unit: 'kg', location: 'D-3', zone: 'D', dateIn: daysAgo(3), expiry: daysFromNow(20), status: 'Warning' },
+  { id: 'INV-017', name: 'Susu Evaporasi', category: 'Susu', qty: 200, unit: 'liter', location: 'D-4', zone: 'D', dateIn: daysAgo(15), expiry: daysFromNow(60), status: 'Aman' },
+  { id: 'INV-018', name: 'Krim Kocok', category: 'Susu', qty: 120, unit: 'liter', location: 'D-5', zone: 'D', dateIn: daysAgo(8), expiry: daysFromNow(30), status: 'Aman' },
+  
+  // Zone E - LOW CAPACITY (1/6 = 17%) = GREEN
+  { id: 'INV-006', name: 'Sodium Benzoat', category: 'Pengawet', qty: 100, unit: 'kg', location: 'E-1', zone: 'E', dateIn: daysAgo(15), expiry: daysFromNow(180), status: 'Aman' },
 ];
 
 const USERS = [
