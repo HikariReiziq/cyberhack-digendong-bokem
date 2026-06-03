@@ -28,6 +28,7 @@ function ProfileContent() {
   const [pwError, setPwError] = useState<string | null>(null);
   const [notifPrefs, setNotifPrefs] = useState({ email: true, inApp: true, expiry: true, coldChain: true });
   const [isSavingNotif, setIsSavingNotif] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
 
   useEffect(() => {
     if (user) { setProfileData({ name: user.name || '', email: user.email || '' }); setCurrentAvatar(user.avatar || null); }
@@ -35,8 +36,14 @@ function ProfileContent() {
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab && ['account', 'password', 'notifications'].includes(tab)) setActiveTab(tab);
+    if (tab && ['account', 'password', 'notifications', 'system'].includes(tab)) setActiveTab(tab);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setGeminiKeyInput(localStorage.getItem('aromasys_gemini_api_key') || '');
+    }
+  }, []);
 
   useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(null), 4000); return () => clearTimeout(timer); } }, [toast]);
 
@@ -122,6 +129,14 @@ function ProfileContent() {
     }
   }
 
+  function saveSystemSettings(e: React.FormEvent) {
+    e.preventDefault();
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('aromasys_gemini_api_key', geminiKeyInput.trim());
+      setToast({ msg: 'System API Key saved successfully!', type: 'success' });
+    }
+  }
+
   function handleLogout() {
     logout();
     router.push('/login');
@@ -133,6 +148,7 @@ function ProfileContent() {
     { key: 'account', label: t('tabAccount'), icon: User },
     { key: 'password', label: t('tabPassword'), icon: Key },
     { key: 'notifications', label: t('notifications'), icon: Bell },
+    ...(user?.role === 'Admin' ? [{ key: 'system', label: 'System API', icon: Key }] : []),
   ];
 
   return (
@@ -263,6 +279,36 @@ function ProfileContent() {
             className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#2C742F] hover:bg-[#366306] text-white font-bold text-sm transition-all disabled:opacity-50">
             {isSavingNotif ? t('save') + '...' : <><Save className="w-4 h-4" />{t('saveChanges')}</>}
           </button>
+        </motion.div>
+      )}
+
+      {/* System Tab (Admin Only) */}
+      {activeTab === 'system' && user?.role === 'Admin' && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-2xl p-6 shadow-sm border border-stone-100 space-y-4">
+          <h2 className="font-bold text-[#1C1B1F]">System API Settings</h2>
+          <p className="text-xs text-[#79747E]">
+            Configure the global API keys used by the application for AI processing and model inference.
+          </p>
+          <form onSubmit={saveSystemSettings} className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-[#79747E] block mb-1">Gemini API Key</label>
+              <input
+                type="password"
+                value={geminiKeyInput}
+                onChange={e => setGeminiKeyInput(e.target.value)}
+                className={inputCls}
+                placeholder="Enter Gemini API Key (e.g. AQ.Ab8RN6...)"
+              />
+              <p className="text-[10px] text-[#79747E] mt-1">
+                This key will be stored in your browser and used for direct Gemini AI queries as well as file upload extraction.
+              </p>
+            </div>
+            <button type="submit"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#2C742F] hover:bg-[#366306] text-white font-bold text-sm transition-all">
+              <Save className="w-4 h-4" /> Save Key
+            </button>
+          </form>
         </motion.div>
       )}
 

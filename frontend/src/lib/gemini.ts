@@ -69,11 +69,17 @@ async function callModel(
   mimeType: string = 'image/png',
   taskType?: AITaskType
 ): Promise<string> {
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  let apiKey = '';
+  if (typeof window !== 'undefined') {
+    apiKey = localStorage.getItem('aromasys_gemini_api_key') || '';
+  }
+  if (!apiKey) {
+    apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+  }
 
   if (!apiKey) {
     throw new Error(
-      'NEXT_PUBLIC_GEMINI_API_KEY is not configured. Please set it in your environment variables.'
+      'NEXT_PUBLIC_GEMINI_API_KEY is not configured. Please set it in your environment variables or in Settings.'
     );
   }
 

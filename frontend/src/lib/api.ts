@@ -131,6 +131,13 @@ export async function apiFetch<T = unknown>(
     ...(headers as Record<string, string>),
   };
 
+  if (typeof window !== 'undefined') {
+    const customKey = localStorage.getItem('aromasys_gemini_api_key');
+    if (customKey) {
+      mergedHeaders['x-gemini-api-key'] = customKey;
+    }
+  }
+
   if (!skipAuth && token) {
     mergedHeaders['Authorization'] = `Bearer ${token}`;
   }
