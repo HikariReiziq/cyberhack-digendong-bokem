@@ -27,6 +27,7 @@ app.use(cors({
     'http://localhost:3001',
     'http://localhost:3002',
     'http://localhost:3003',
+    'https://main.d1duzg6kl2wvnh.amplifyapp.com',
   ],
   credentials: true,
 }));

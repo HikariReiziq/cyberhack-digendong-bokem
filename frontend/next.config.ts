@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   transpilePackages: ["framer-motion"],
   typescript: {
     // WASM SWC (native bindings not available) crashes the TS checker.
