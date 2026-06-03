@@ -277,11 +277,8 @@ export default function QCPage() {
               const now = Date.now();
               const width = video.videoWidth;
 
-              // Only consider objects in the middle (e.g., passing a virtual line)
-              const passingObjects = preds.filter((p: any) => {
-                 const xPct = p.x / width;
-                 return xPct > 0.35 && xPct < 0.65;
-              });
+              // Consider all detected objects on screen for auto-inspection
+              const passingObjects = preds;
 
               let localAccept = 0;
               let localReject = 0;
