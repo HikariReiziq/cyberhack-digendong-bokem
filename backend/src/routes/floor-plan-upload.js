@@ -38,13 +38,14 @@ router.post('/', upload.fields([
     }
 
     let zones;
+    const userApiKey = req.headers['x-gemini-api-key'] || req.headers['x-gemini-key'];
 
     if (pdfFile) {
       // Enhanced zone extraction: image + PDF combined analysis
-      zones = await extractZonesFromImageAndPDF(imageFile.buffer, imageFile.mimetype, pdfFile.buffer);
+      zones = await extractZonesFromImageAndPDF(imageFile.buffer, imageFile.mimetype, pdfFile.buffer, userApiKey);
     } else {
       // Image-only zone detection
-      zones = await extractZonesFromImage(imageFile.buffer, imageFile.mimetype);
+      zones = await extractZonesFromImage(imageFile.buffer, imageFile.mimetype, userApiKey);
     }
 
     return res.json({ success: true, zones });
@@ -58,8 +59,8 @@ router.post('/', upload.fields([
  * Get the Gemini API key from environment variables.
  * Supports both GEMINI_API_KEY and NEXT_PUBLIC_GEMINI_API_KEY.
  */
-function getApiKey() {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+function getApiKey(userApiKey) {
+  const apiKey = userApiKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Gemini API key not configured. Set GEMINI_API_KEY in environment.');
   }
@@ -120,8 +121,8 @@ If you cannot identify any zones, return an empty array [].`;
 /**
  * Call Gemini API with model fallback and JSON format enforcement.
  */
-async function callGeminiWithFallback(contents, generationConfig = {}) {
-  const apiKey = getApiKey();
+async function callGeminiWithFallback(contents, generationConfig = {}, userApiKey) {
+  const apiKey = getApiKey(userApiKey);
   const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
   let lastError = null;
 
@@ -167,7 +168,7 @@ async function callGeminiWithFallback(contents, generationConfig = {}) {
 /**
  * Extract zones from an image using Gemini AI.
  */
-async function extractZonesFromImage(imageBuffer, mimeType) {
+async function extractZonesFromImage(imageBuffer, mimeType, userApiKey) {
   const base64Image = imageBuffer.toString('base64');
   const contents = [{
     parts: [
@@ -176,14 +177,14 @@ async function extractZonesFromImage(imageBuffer, mimeType) {
     ]
   }];
 
-  const text = await callGeminiWithFallback(contents);
+  const text = await callGeminiWithFallback(contents, {}, userApiKey);
   return parseZonesFromText(text);
 }
 
 /**
  * Extract zones from an image + PDF using Gemini AI for enhanced analysis.
  */
-async function extractZonesFromImageAndPDF(imageBuffer, imageMimeType, pdfBuffer) {
+async function extractZonesFromImageAndPDF(imageBuffer, imageMimeType, pdfBuffer, userApiKey) {
   const base64Image = imageBuffer.toString('base64');
   const base64Pdf = pdfBuffer.toString('base64');
   const contents = [{
@@ -194,7 +195,7 @@ async function extractZonesFromImageAndPDF(imageBuffer, imageMimeType, pdfBuffer
     ]
   }];
 
-  const text = await callGeminiWithFallback(contents);
+  const text = await callGeminiWithFallback(contents, {}, userApiKey);
   return parseZonesFromText(text);
 }
 
