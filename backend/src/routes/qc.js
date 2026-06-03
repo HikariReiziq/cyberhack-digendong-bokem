@@ -229,13 +229,13 @@ router.post('/analyze', requireAuth, validate(analyzeValidation), async (req, re
 
     if (predictions.length === 0) {
       status = 'REJECTED';
-      reason = 'Material ditolak karena tidak ada objek terdeteksi yang relevan.';
+      reason = 'No relevant objects detected.';
     } else if (hasDisease) {
       status = 'REJECTED';
-      reason = `Material ditolak karena terindikasi mengandung defek/penyakit (${roboflowClasses.join(', ')}).`;
+      reason = `Material rejected due to defect/disease (${roboflowClasses.join(', ')}).`;
     } else {
       status = 'ACCEPTED';
-      reason = `Material diterima. Kondisi terpantau sehat (${roboflowClasses.join(', ')}).`;
+      reason = `Material accepted. Condition is healthy (${roboflowClasses.join(', ')}).`;
     }
 
     const dbResult = status === 'ACCEPTED' ? 'pass' : 'fail';
