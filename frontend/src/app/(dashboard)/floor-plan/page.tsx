@@ -1435,64 +1435,13 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
       }
     }
 
-    // Scenario A: Standalone CSV (no image uploaded)
+    // Scenario A: Enforce floor plan image requirement
     if (!uploadImageFile) {
-      if (csvZones.length > 0) {
-        setIsUploading(true);
-        setUploadError(null);
-        try {
-          const updatedZonesPromises = csvZones.map(async (csvZone, idx) => {
-            const zoneLetter = csvZone.theme || (csvZone.id.charAt(0).match(/[A-E]/) ? csvZone.id.charAt(0) : 'C');
-            let csvMappedMaterials = await parseAndPersistCsvMaterials(csvZone.materials || '', csvZone.id, zoneLetter);
-
-            // Fallback to existing materials in DB if CSV column was empty
-            if (csvMappedMaterials.length === 0) {
-              const dbMaterials = inventoryItems.filter(i => String(i.location).toLowerCase() === String(csvZone.id).toLowerCase());
-              csvMappedMaterials = dbMaterials.map(match => ({
-                id: String(match.id),
-                name: match.name,
-                qty: match.qty,
-                unit: match.unit,
-                maxCapacity: 500
-              }));
-            }
-
-            return {
-              id: csvZone.id,
-              name: csvZone.name,
-              position: {
-                x: csvZone.x !== undefined && !isNaN(csvZone.x) ? csvZone.x : (20 + (idx * 10) % 60),
-                y: csvZone.y !== undefined && !isNaN(csvZone.y) ? csvZone.y : (20 + (Math.floor(idx / 6) * 10) % 60),
-                width: csvZone.width !== undefined && !isNaN(csvZone.width) ? csvZone.width : 15,
-                height: csvZone.height !== undefined && !isNaN(csvZone.height) ? csvZone.height : 15,
-              },
-              theme: csvZone.theme,
-              color: csvZone.color,
-              hasTempSensor: csvZone.hasTempSensor,
-              tempApiUrl: csvZone.tempApiUrl,
-              hasHumidSensor: csvZone.hasHumidSensor,
-              humidApiUrl: csvZone.humidApiUrl,
-              materials: csvMappedMaterials
-            };
-          });
-
-          const updatedZones = await Promise.all(updatedZonesPromises);
-          updateActiveFloorZones(updatedZones);
-          setShowUploadPanel(false);
-          setUploadPdfFile(null);
-          setToast(`Metadata CSV berhasil diimpor! ${updatedZones.length} zona kustom dikonfigurasi.`);
-          fetchInventory();
-          fetchSlots();
-        } catch (err: any) {
-          setUploadError(err.message || 'Gagal memproses file CSV.');
-        } finally {
-          setIsUploading(false);
-        }
-      }
+      setUploadError('File gambar denah (floor plan) wajib diunggah. Metadata tidak dapat diunggah tanpa gambar denah.');
       return;
     }
 
-    // Scenario B: Image + CSV / PDF / Gemini
+    // Scenario B: Image + Optional CSV / PDF / Gemini
     setIsUploading(true);
     setUploadError(null);
     try {
@@ -1516,26 +1465,7 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
         materials?: string;
       }> = [];
 
-      if (csvZones.length > 0) {
-        // If CSV is uploaded, populate exactly the zones defined in the CSV
-        extractedZones = csvZones.map(cz => ({
-          id: cz.id,
-          name: cz.name,
-          position: {
-            x: cz.x !== undefined && !isNaN(cz.x) ? cz.x : 20,
-            y: cz.y !== undefined && !isNaN(cz.y) ? cz.y : 20,
-            width: cz.width !== undefined && !isNaN(cz.width) ? cz.width : 15,
-            height: cz.height !== undefined && !isNaN(cz.height) ? cz.height : 15,
-          },
-          theme: cz.theme,
-          hasTempSensor: cz.hasTempSensor,
-          tempApiUrl: cz.tempApiUrl,
-          hasHumidSensor: cz.hasHumidSensor,
-          humidApiUrl: cz.humidApiUrl,
-          color: cz.color,
-          materials: cz.materials
-        }));
-      } else if (uploadPdfFile && !uploadPdfFile.name.toLowerCase().endsWith('.csv')) {
+      if (uploadPdfFile && !uploadPdfFile.name.toLowerCase().endsWith('.csv')) {
         // Image + PDF: send to backend for enhanced zone detection
         const formData = new FormData();
         formData.append('image', uploadImageFile);
@@ -1558,9 +1488,8 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
           setIsUploading(false);
           return;
         }
-      } else if (csvZones.length === 0) {
-        // Image only (no CSV/PDF): send to backend for AI zone detection
-        // Uses backend API key to avoid frontend quota issues
+      } else {
+        // Image only (no PDF, CSV metadata parsed separately on frontend): send to backend for AI zone detection
         const formData = new FormData();
         formData.append('image', uploadImageFile);
         
@@ -1583,6 +1512,30 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
               theme: ['blue', 'cyan', 'purple', 'warm', 'green', 'hazard'].includes(z.theme) ? z.theme : 'green',
               color: z.color || '',
             }));
+
+            // Merge CSV details into Gemini-detected zones if CSV was uploaded
+            if (csvZones.length > 0) {
+              extractedZones = extractedZones.map(ez => {
+                const match = csvZones.find(cz => 
+                  String(cz.id).toLowerCase() === String(ez.id).toLowerCase() ||
+                  String(cz.name).toLowerCase() === String(ez.name).toLowerCase()
+                );
+                if (match) {
+                  return {
+                    ...ez,
+                    name: match.name || ez.name,
+                    theme: match.theme || ez.theme,
+                    color: match.color || ez.color,
+                    hasTempSensor: match.hasTempSensor,
+                    tempApiUrl: match.tempApiUrl,
+                    hasHumidSensor: match.hasHumidSensor,
+                    humidApiUrl: match.humidApiUrl,
+                    materials: match.materials
+                  };
+                }
+                return ez;
+              });
+            }
           } else if (data.error) {
             throw new Error(data.error);
           }
