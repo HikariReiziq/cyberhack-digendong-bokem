@@ -418,7 +418,7 @@ function ActivityTimeline({ activities }: { activities: Array<{ id: number; time
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [activities, setActivities] = useState<AuditLog[]>([]);
@@ -465,7 +465,7 @@ export default function DashboardPage() {
     }
 
     if (!anySuccess) {
-      setError("Unable to connect to the server. Please try again later.");
+      setError(t('dashboardConnFailed'));
     }
 
     setIsLoading(false);
@@ -478,7 +478,7 @@ export default function DashboardPage() {
   // Computed stats from inventory + DB
   const stats = useMemo(() => {
     const totalSlots = dashboardStats?.zoneSummary?.reduce((sum, z) => sum + z.totalSlots, 0) || 30;
-    const occupiedSlots = inventory.length;
+    const occupiedSlots = inventory.filter((i) => i.location && i.location !== "UNASSIGNED").length;
     const capacity = Math.min(100, Math.round((occupiedSlots / totalSlots) * 100));
     return { capacity, totalSlots, occupiedSlots };
   }, [inventory, dashboardStats]);
@@ -555,14 +555,14 @@ export default function DashboardPage() {
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4 text-center">
         <AlertTriangle size={48} className="text-[#EA4B48]" />
         <div>
-          <p className="text-sm font-bold text-[#1C1B1F]">Failed to Load Dashboard</p>
+          <p className="text-sm font-bold text-[#1C1B1F]">{t('failedLoadDashboard')}</p>
           <p className="text-xs text-[#79747E] mt-1">{error}</p>
         </div>
         <button
           onClick={fetchDashboardData}
           className="px-5 py-2 rounded-lg bg-[#2C742F] text-white text-sm font-semibold hover:bg-[#235a26] transition-colors mt-2"
         >
-          Retry
+          {t('retry')}
         </button>
       </div>
     );
@@ -587,7 +587,7 @@ export default function DashboardPage() {
               <span className="text-sm text-[#79747E] font-medium">{t('totalActiveStock')}</span>
               <div className="flex items-baseline gap-1.5 mt-2">
                 <span className="text-3xl font-bold text-[#1C1B1F]">{activeItemsCount}</span>
-                <span className="text-lg text-[#79747E] font-light">lots</span>
+                <span className="text-lg text-[#79747E] font-light">{t('lots')}</span>
               </div>
             </div>
             <div className="w-11 h-11 rounded-lg bg-[#D7E5D8] flex items-center justify-center">
@@ -598,10 +598,10 @@ export default function DashboardPage() {
             <TrendingUp size={16} className={weeklyChange !== null && weeklyChange < 0 ? "text-[#EA4B48]" : "text-[#2C742F]"} />
             {weeklyChange !== null ? (
               <span className={`font-semibold ${weeklyChange < 0 ? "text-[#EA4B48]" : "text-[#2C742F]"}`}>
-                {weeklyChange >= 0 ? `+${weeklyChange}` : weeklyChange} this week
+                {weeklyChange >= 0 ? `+${weeklyChange}` : weeklyChange} {t('thisWeek')}
               </span>
             ) : (
-              <span className="text-[#79747E] font-medium">Loading trend...</span>
+              <span className="text-[#79747E] font-medium">{t('loadingTrend')}</span>
             )}
           </div>
         </motion.div>
@@ -618,7 +618,7 @@ export default function DashboardPage() {
               <span className="text-sm text-[#79747E] font-medium">{t('nearingExpiry')}</span>
               <div className="flex items-baseline gap-1.5 mt-2">
                 <span className="text-3xl font-bold text-[#1C1B1F]">{expiringSoonCount}</span>
-                <span className="text-lg text-[#79747E] font-light">items</span>
+                <span className="text-lg text-[#79747E] font-light">{t('items')}</span>
               </div>
             </div>
             <div className="w-11 h-11 rounded-lg bg-red-50 flex items-center justify-center">
@@ -628,10 +628,10 @@ export default function DashboardPage() {
           <div className="flex items-center gap-1.5 text-sm">
             <AlertTriangle size={14} className="text-[#EA4B48]" />
             <span className="text-[#EA4B48] font-semibold">
-              {criticalCount > 0 && `${criticalCount} kritis`}
+              {criticalCount > 0 && t('criticalCountText').replace('{count}', String(criticalCount))}
               {criticalCount > 0 && warningCount > 0 && ", "}
-              {warningCount > 0 && `${warningCount} warning`}
-              {criticalCount === 0 && warningCount === 0 && "Semua aman"}
+              {warningCount > 0 && t('warningCountText').replace('{count}', String(warningCount))}
+              {criticalCount === 0 && warningCount === 0 && t('allSafe')}
             </span>
           </div>
         </motion.div>
@@ -659,7 +659,7 @@ export default function DashboardPage() {
               />
             </div>
             <p className="text-xs text-[#79747E] font-medium">
-              {stats.totalSlots - stats.occupiedSlots} empty slots remaining
+              {t('emptySlotsRemaining').replace('{count}', String(stats.totalSlots - stats.occupiedSlots))}
             </p>
           </div>
         </motion.div>
@@ -678,7 +678,7 @@ export default function DashboardPage() {
                 <span className={`text-3xl font-bold ${coldChainAlertsCount > 0 ? "text-[#EA4B48]" : "text-[#1C1B1F]"}`}>
                   {coldChainAlertsCount}
                 </span>
-                <span className="text-lg text-[#79747E] font-light">zones</span>
+                <span className="text-lg text-[#79747E] font-light">{lang === 'id' ? 'zona' : 'zones'}</span>
               </div>
             </div>
             <div className={`w-11 h-11 rounded-lg flex items-center justify-center ${
@@ -689,8 +689,8 @@ export default function DashboardPage() {
           </div>
           <div className="text-xs text-[#79747E] font-medium">
             {coldChainAlertsCount > 0
-              ? "temperature anomaly detected in storage"
-              : "All zones within normal range"}
+              ? t('tempAnomalyDetected')
+              : t('allZonesNormal')}
           </div>
         </motion.div>
       </div>
@@ -741,22 +741,22 @@ export default function DashboardPage() {
           className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-[#D7E5D8] overflow-hidden flex flex-col"
         >
           <div className="px-6 py-4 border-b border-[#D7E5D8] flex items-center justify-between">
-            <h3 className="text-lg font-bold text-[#1C1B1F]">Items Requiring Immediate Use</h3>
+            <h3 className="text-lg font-bold text-[#1C1B1F]">{t('itemsRequiringImmediateUse')}</h3>
             <Link
               href="/fifo-expiry"
               className="text-sm text-[#2C742F] font-semibold hover:underline"
             >
-              View All
+              {t('viewAll')}
             </Link>
           </div>
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-gray-100 text-xs text-[#79747E] font-semibold uppercase tracking-wider">
-                  <th className="px-6 py-3">Material</th>
-                  <th className="px-6 py-3">Lot ID</th>
-                  <th className="px-6 py-3">Days Left</th>
-                  <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3">{t('colName')}</th>
+                  <th className="px-6 py-3">{lang === 'id' ? 'ID Lot' : 'Lot ID'}</th>
+                  <th className="px-6 py-3">{t('daysLeft')}</th>
+                  <th className="px-6 py-3">{t('colStatus')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -765,11 +765,11 @@ export default function DashboardPage() {
                     const days = Math.ceil(
                       (new Date(item.expiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
                     );
-                    const daysLabel = days <= 0 ? "Expired" : `${days} days left`;
+                    const daysLabel = days <= 0 ? t('expired') : `${days} ${t('daysLeft')}`;
                     const statusClass =
                       days <= 7 ? "critical" : days <= 30 ? "warning" : "monitor";
                     const statusLabel =
-                      days <= 7 ? "Critical" : days <= 30 ? "Warning" : "Monitor";
+                      days <= 7 ? t('critical') : days <= 30 ? t('warning') : (lang === 'id' ? 'Pantau' : 'Monitor');
 
                     return (
                       <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
@@ -820,7 +820,7 @@ export default function DashboardPage() {
                 ) : (
                   <tr>
                     <td colSpan={4} className="px-6 py-8 text-center text-sm text-[#79747E]">
-                      No items requiring immediate use
+                      {t('noImmediateUseItems')}
                     </td>
                   </tr>
                 )}

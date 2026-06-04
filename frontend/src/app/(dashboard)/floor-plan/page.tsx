@@ -1516,7 +1516,14 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
             uploadedAt: new Date().toISOString(),
             zones: []
           };
-          updateActiveFloorPlan(planData);
+          setCustomFloorPlan(planData);
+          setInteractiveZones([]);
+          setFloors(prevFloors => {
+            const updated = prevFloors.map(f => f.id === activeFloorId ? { ...f, customFloorPlan: planData, interactiveZones: [] } : f);
+            localStorage.setItem('aromasys_floors', JSON.stringify(updated));
+            syncZonesToDBImmediate(updated);
+            return updated;
+          });
           setShowUploadPanel(false);
           setUploadImageFile(null);
           setUploadImagePreview(null);
@@ -1591,7 +1598,14 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
             uploadedAt: new Date().toISOString(),
             zones: []
           };
-          updateActiveFloorPlan(planData);
+          setCustomFloorPlan(planData);
+          setInteractiveZones([]);
+          setFloors(prevFloors => {
+            const updated = prevFloors.map(f => f.id === activeFloorId ? { ...f, customFloorPlan: planData, interactiveZones: [] } : f);
+            localStorage.setItem('aromasys_floors', JSON.stringify(updated));
+            syncZonesToDBImmediate(updated);
+            return updated;
+          });
           setShowUploadPanel(false);
           setUploadImageFile(null);
           setUploadImagePreview(null);
@@ -1609,8 +1623,7 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
         zones: extractedZones
       };
 
-      updateActiveFloorPlan(planData);
-
+      let mapped: InteractiveZone[] = [];
       if (extractedZones.length > 0) {
         const mappedPromises = extractedZones.map(async z => {
           const zoneId = z.id || `Z-${Math.random().toString(36).substring(2, 6)}`;
@@ -1639,12 +1652,21 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
             theme: z.theme || 'green',
             color: z.color || '',
             iconType: z.iconType || 'none',
-            materials: csvMappedMaterials
+            materials: csvMappedMaterials,
+            isSetup: true
           };
         });
-        const mapped = await Promise.all(mappedPromises);
-        updateActiveFloorZones(mapped);
+        mapped = await Promise.all(mappedPromises);
       }
+
+      setCustomFloorPlan(planData);
+      setInteractiveZones(mapped);
+      setFloors(prevFloors => {
+        const updated = prevFloors.map(f => f.id === activeFloorId ? { ...f, customFloorPlan: planData, interactiveZones: mapped } : f);
+        localStorage.setItem('aromasys_floors', JSON.stringify(updated));
+        syncZonesToDBImmediate(updated);
+        return updated;
+      });
 
       setShowUploadPanel(false);
       setUploadImageFile(null);
