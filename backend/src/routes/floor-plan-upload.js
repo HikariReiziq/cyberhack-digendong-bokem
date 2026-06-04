@@ -143,46 +143,63 @@ Be precise with positions — they should closely match where zones appear in th
 If you cannot identify any zones, return an empty array [].`;
 
 /**
- * Call Gemini API with model fallback and JSON format enforcement.
+ * Call Gemini API with model fallback, retry for 429, and JSON format enforcement.
  */
 async function callGeminiWithFallback(contents, generationConfig = {}, userApiKey) {
   const apiKey = getApiKey(userApiKey);
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash'];
   let lastError = null;
 
   for (const model of models) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents,
-          generationConfig: {
-            ...generationConfig,
-            responseMimeType: 'application/json'
-          }
-        })
-      });
+    // Retry up to 2 times for 429 rate-limit errors with exponential backoff
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            generationConfig: {
+              ...generationConfig,
+              responseMimeType: 'application/json'
+            }
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        if (response.status === 429 && attempt < 2) {
+          // Rate limited — wait and retry same model
+          const waitMs = (attempt + 1) * 5000; // 5s, 10s
+          console.warn(`Model ${model} rate limited (429), retrying in ${waitMs / 1000}s...`);
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        if (data.error) {
+          throw new Error(data.error.message);
+        }
+
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text === undefined || text === null) {
+          throw new Error('Empty response');
+        }
+
+        return text;
+      } catch (err) {
+        console.warn(`Model ${model} failed in backend (attempt ${attempt + 1}):`, err.message);
+        lastError = err;
+        if (attempt < 2 && err.message?.includes('429')) {
+          const waitMs = (attempt + 1) * 5000;
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+          continue;
+        }
+        break; // Move to next model
       }
-
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error.message);
-      }
-
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text === undefined || text === null) {
-        throw new Error('Empty response');
-      }
-
-      return text;
-    } catch (err) {
-      console.warn(`Model ${model} failed in backend:`, err.message);
-      lastError = err;
     }
   }
 
