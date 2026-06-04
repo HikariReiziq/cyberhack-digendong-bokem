@@ -4,7 +4,7 @@ import multer from 'multer';
 const router = Router();
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 const ACCEPTED_PDF_TYPE = 'application/pdf';
 
 // Use memory storage for multer
@@ -17,23 +17,27 @@ const upload = multer({
 router.post('/', upload.fields([
   { name: 'image', maxCount: 1 },
   { name: 'pdf', maxCount: 1 }
-]), async (req, res) => {
-  try {
-    const imageFile = req.files?.image?.[0];
-    const pdfFile = req.files?.pdf?.[0];
+  ]), async (req, res) => {
+    try {
+      const imageFile = req.files?.image?.[0];
+      const pdfFile = req.files?.pdf?.[0];
 
-    // Validate: at least an image must be provided
-    if (!imageFile) {
-      return res.status(400).json({ success: false, error: 'An image file is required (PNG, JPG, or WEBP)' });
-    }
+      // Validate: at least an image must be provided
+      if (!imageFile) {
+        return res.status(400).json({ success: false, error: 'An image file is required (PNG, JPG, or WEBP)' });
+      }
 
-    // Validate image type
-    if (!ACCEPTED_IMAGE_TYPES.includes(imageFile.mimetype)) {
-      return res.status(400).json({ success: false, error: 'Unsupported image format. Accepted: PNG, JPG, WEBP' });
-    }
+      // Validate image type / extension
+      const extension = imageFile.originalname ? imageFile.originalname.split('.').pop().toLowerCase() : '';
+      const isValidImage = ACCEPTED_IMAGE_TYPES.includes(imageFile.mimetype) || 
+                          ['png', 'jpg', 'jpeg', 'webp'].includes(extension);
 
-    // Validate PDF type if provided
-    if (pdfFile && pdfFile.mimetype !== ACCEPTED_PDF_TYPE) {
+      if (!isValidImage) {
+        return res.status(400).json({ success: false, error: 'Unsupported image format. Accepted: PNG, JPG, WEBP' });
+      }
+
+      // Validate PDF type if provided
+      if (pdfFile && pdfFile.mimetype !== ACCEPTED_PDF_TYPE) {
       return res.status(400).json({ success: false, error: 'Unsupported file format. Only PDF is accepted for metadata' });
     }
 
