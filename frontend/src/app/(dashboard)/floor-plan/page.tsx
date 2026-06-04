@@ -1356,16 +1356,8 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
         color?: string;
       }> = [];
 
-      // Check if this is their custom blueprint design to instantly recreate the perfect layout
-      const isCustomWarehousePlan = uploadImageFile.name.toLowerCase().includes('desain') || 
-                                    uploadImageFile.name.toLowerCase().includes('judul') || 
-                                    uploadImageFile.name.toLowerCase().includes('denah') ||
-                                    uploadImageFile.name.toLowerCase().includes('upload') ||
-                                    uploadImageFile.name.toLowerCase().includes('png');
-
       if (csvZones.length > 0) {
-        // If CSV is uploaded, ignore isCustomWarehousePlan default hardcoded zones,
-        // and populate exactly the zones defined in the CSV!
+        // If CSV is uploaded, populate exactly the zones defined in the CSV
         extractedZones = csvZones.map(cz => ({
           id: cz.id,
           name: cz.name,
@@ -1382,68 +1374,6 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
           humidApiUrl: cz.humidApiUrl,
           color: cz.color
         }));
-      } else if (isCustomWarehousePlan) {
-        // Instantly recreate the exact 6 zones corresponding to their new layout design
-        extractedZones = [
-          {
-            id: 'A-1',
-            name: 'Zone A - Loading Dock & Receiving Area',
-            position: { x: 13.5, y: 5.5, width: 47, height: 38 },
-            theme: 'blue',
-            hasTempSensor: true,
-            tempApiUrl: 'http://localhost:4000/api/cold-chain',
-            hasHumidSensor: false,
-            color: ''
-          },
-          {
-            id: 'D-1',
-            name: 'Zone D - Cold Storage Facility',
-            position: { x: 60.5, y: 5.5, width: 26, height: 40 },
-            theme: 'cyan',
-            hasTempSensor: true,
-            tempApiUrl: 'http://localhost:4000/api/cold-chain',
-            hasHumidSensor: true,
-            humidApiUrl: 'http://localhost:4000/api/cold-chain',
-            color: '#06B6D4'
-          },
-          {
-            id: 'B-1',
-            name: 'Zone B - Dry Raw Material Storage',
-            position: { x: 13.5, y: 45.5, width: 23.5, height: 32 },
-            theme: 'warm',
-            hasTempSensor: false,
-            hasHumidSensor: false,
-            color: ''
-          },
-          {
-            id: 'C-1',
-            name: 'Zone C - Extraction & Processing Area',
-            position: { x: 37, y: 45.5, width: 23.5, height: 32 },
-            theme: 'green',
-            hasTempSensor: false,
-            hasHumidSensor: false,
-            color: ''
-          },
-          {
-            id: 'E-1',
-            name: 'Zone E - Hazardous Material Storage',
-            position: { x: 60.5, y: 45.5, width: 26, height: 49 },
-            theme: 'hazard',
-            hasTempSensor: true,
-            tempApiUrl: 'http://localhost:4000/api/cold-chain',
-            hasHumidSensor: false,
-            color: '#EF4444'
-          },
-          {
-            id: 'F-1',
-            name: 'Zone F - Packaging & Outbound Shipment',
-            position: { x: 13.5, y: 77.5, width: 47, height: 17 },
-            theme: 'warm',
-            hasTempSensor: false,
-            hasHumidSensor: false,
-            color: ''
-          }
-        ];
       } else if (uploadPdfFile && !uploadPdfFile.name.toLowerCase().endsWith('.csv')) {
         // Image + PDF: send to backend for enhanced zone detection
         const formData = new FormData();
@@ -1469,24 +1399,52 @@ function parseCSVContent(textContent: string): CSVParsedZone[] {
         }
       } else if (csvZones.length === 0) {
         // Image only (and no CSV): call Gemini directly for zone detection
-        const geminiPrompt = 'Analyze this warehouse floor plan image. Detect all distinct zones/areas and return them as a JSON array. Each zone should have: name (string), position (object with x, y, width, height as percentages 0-100 of the image dimensions). Return ONLY the JSON array, no other text.';
+        const geminiPrompt = `You are an expert floor plan and warehouse layout analysis system.
+Carefully analyze this floor plan image and detect ALL distinct zones, rooms, or areas visible in the layout.
+
+For each zone/area detected, determine:
+1. A unique identifier (e.g., "A-1", "B-1", "zone-1")
+2. A descriptive name based on what you see (labels, text, symbols, or inferred function)
+3. The zone's bounding box position as percentage values (0-100) of the image dimensions
+4. A theme color category that best fits the zone's purpose:
+   - "blue" for loading, receiving, logistics areas
+   - "cyan" for cold storage, refrigerated areas
+   - "purple" for preparation, tray setting areas
+   - "warm" for hot processing, extraction, or dry storage areas
+   - "green" for general production, QC, labs, offices
+   - "hazard" for hazardous material storage, chemical areas
+
+Return ONLY a valid JSON array. Each object must have:
+- id (string): unique zone identifier
+- name (string): descriptive zone name
+- position (object): { x, y, width, height } as percentage values 0-100
+- theme (string): one of "blue", "cyan", "purple", "warm", "green", "hazard"
+
+Be precise with positions — they should closely match where zones appear in the image.
+If a zone has visible text labels, use those as the name.
+Return an empty array [] if no zones can be detected.`;
         
         try {
           const mimeType = uploadImageFile.type || 'image/png';
           const responseText = await callAI(geminiPrompt, 'floor-plan', imageDataUrl, mimeType);
           
-          const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+          // Parse JSON from response, stripping markdown code fences if present
+          let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+          const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
             if (Array.isArray(parsed)) {
-              extractedZones = parsed.map((z: { name?: string; position?: { x?: number; y?: number; width?: number; height?: number } }) => ({
+              extractedZones = parsed.map((z: any, idx: number) => ({
+                id: z.id || `Z-${idx + 1}`,
                 name: z.name || 'Detected Zone',
                 position: {
-                  x: Math.max(0, Math.min(100, z.position?.x ?? 0)),
-                  y: Math.max(0, Math.min(100, z.position?.y ?? 0)),
-                  width: Math.max(5, Math.min(100, z.position?.width ?? 20)),
-                  height: Math.max(5, Math.min(100, z.position?.height ?? 20)),
-                }
+                  x: Math.max(0, Math.min(95, z.position?.x ?? 0)),
+                  y: Math.max(0, Math.min(95, z.position?.y ?? 0)),
+                  width: Math.max(5, Math.min(100 - (z.position?.x ?? 0), z.position?.width ?? 20)),
+                  height: Math.max(5, Math.min(100 - (z.position?.y ?? 0), z.position?.height ?? 20)),
+                },
+                theme: ['blue', 'cyan', 'purple', 'warm', 'green', 'hazard'].includes(z.theme) ? z.theme : 'green',
+                color: z.color || '',
               }));
             }
           }

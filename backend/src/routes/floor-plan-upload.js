@@ -91,31 +91,55 @@ function parseZonesFromText(text) {
 }
 
 const ZONE_EXTRACTION_PROMPT = `You are an expert floor plan analysis system for a warehouse management application.
-Analyze this floor plan and extract all warehouse zones/areas.
-Return ONLY a valid JSON array with no markdown formatting (no \`\`\`json blocks).
-Each object in the array must have:
-- id: string (unique zone identifier, e.g., "zone-a", "zone-b")
-- name: string (descriptive name of the zone, e.g., "Storage Area A", "Cold Room")
-- position: object with x, y, width, height as percentage values (0-100) representing the zone's position on the floor plan
+Carefully analyze this floor plan image and detect ALL distinct zones, rooms, or areas visible.
 
-Example format:
-[{"id":"zone-a","name":"Storage Area A","position":{"x":10,"y":10,"width":30,"height":40}}]
+For each zone detected, determine:
+1. A unique identifier based on visible labels or inferred function (e.g., "A-1", "zone-cold")
+2. A descriptive name using any visible text labels, or inferred from the zone's appearance
+3. The bounding box position as percentage values (0-100) of image dimensions
+4. A theme color category:
+   - "blue" for loading, receiving, logistics areas
+   - "cyan" for cold storage, refrigerated areas
+   - "purple" for preparation, tray setting areas
+   - "warm" for hot processing, extraction, or dry storage
+   - "green" for general production, QC, labs, offices
+   - "hazard" for hazardous material storage, chemical areas
 
+Return ONLY a valid JSON array with no markdown formatting.
+Each object must have:
+- id: string (unique zone identifier)
+- name: string (descriptive name)
+- position: object with x, y, width, height as percentage values (0-100)
+- theme: string (one of: blue, cyan, purple, warm, green, hazard)
+
+Be precise with positions — they should closely match where zones appear in the image.
 If you cannot identify any zones, return an empty array [].`;
 
 const ENHANCED_ZONE_PROMPT = `You are an expert floor plan analysis system for a warehouse management application.
 Analyze this floor plan image together with the accompanying PDF document for enhanced zone extraction.
 The PDF may contain additional textual information about zones, labels, dimensions, or area designations that complement the visual floor plan.
 Combine visual analysis of the image with textual data from the PDF to produce the most accurate zone detection.
-Return ONLY a valid JSON array with no markdown formatting (no \`\`\`json blocks).
-Each object in the array must have:
-- id: string (unique zone identifier, e.g., "zone-a", "zone-b")
-- name: string (descriptive name of the zone, e.g., "Storage Area A", "Cold Room")
-- position: object with x, y, width, height as percentage values (0-100) representing the zone's position on the floor plan
 
-Example format:
-[{"id":"zone-a","name":"Storage Area A","position":{"x":10,"y":10,"width":30,"height":40}}]
+For each zone detected, determine:
+1. A unique identifier based on visible labels or inferred function
+2. A descriptive name using visible text labels from image or PDF
+3. The bounding box position as percentage values (0-100) of image dimensions
+4. A theme color category:
+   - "blue" for loading, receiving, logistics areas
+   - "cyan" for cold storage, refrigerated areas
+   - "purple" for preparation, tray setting areas
+   - "warm" for hot processing, extraction, or dry storage
+   - "green" for general production, QC, labs, offices
+   - "hazard" for hazardous material storage, chemical areas
 
+Return ONLY a valid JSON array with no markdown formatting.
+Each object must have:
+- id: string (unique zone identifier)
+- name: string (descriptive name)
+- position: object with x, y, width, height as percentage values (0-100)
+- theme: string (one of: blue, cyan, purple, warm, green, hazard)
+
+Be precise with positions — they should closely match where zones appear in the image.
 If you cannot identify any zones, return an empty array [].`;
 
 /**
